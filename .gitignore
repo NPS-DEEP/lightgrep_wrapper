@@ -1,0 +1,83 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+
+# Compiled Static libraries
+*.la
+*.a
+
+# misc
+*.d
+*.dSYM
+*.log
+*.o
+*.so
+*.swp
+*.swo
+*.swn
+*.trs
+*~
+.deps
+libtool
+Makefile
+Makefile.in
+*.zip
+aclocal.m4
+autom4te.cache
+config.guess
+config.h
+config.h.in
+config.status
+config.sub
+configure
+*.dirstamp
+depcomp
+install-sh
+missing
+AUTHORS
+ChangeLog
+INSTALL
+NEWS
+README
+ltmain.sh
+test-driver
+src/Makefile
+src/Makefile.in
+stamp-h
+stamp-h1
+build
+build_gcc
+*.pdf
+.DS_Store
+out-*/
+src/TAGS
+TAGS
+core.*
+src/.libs
+test/*_test
+test/temp_*
+test_py/temp_*
+*.tar.gz
+space
+m4/libtool.m4
+m4/lt*
+
+# Java
+*.class
+
+# python
+__pycache__
+*.pyc
+py-compile
+
+# doc
+*.aux
+*.blg
+*.out
+*.toc
+
