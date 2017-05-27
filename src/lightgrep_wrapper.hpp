@@ -48,6 +48,18 @@ namespace lw {
    */
   class lw_t {
     private:
+    LG_HPATTERN     parsed_pattern;
+    LG_HFSM         fsm;
+    LG_HPATTERNMAP  pattern_info;
+    LG_HPROGRAM     program;
+    vector<PatternScanner*> scanners;
+
+    lw_t();
+    ~lw_t();
+
+    // do not allow copy or assignment
+    lw_t(const lw_t&) = delete;
+    lw_t& operator=(const lw_t&) = delete;
 
     public:
     /**

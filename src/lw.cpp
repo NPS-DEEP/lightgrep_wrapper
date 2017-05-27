@@ -1,5 +1,5 @@
 // Author:  Bruce Allen
-// Created: 3/2/2017
+// Created: 5/26/2017
 //
 // The software provided here is released by the Naval Postgraduate
 // School, an agency of the U.S. Department of Navy.  The software
@@ -15,61 +15,132 @@
 // NPS government employees and is therefore in the public domain and
 // not subject to copyright.
 //
-// Released into the public domain on March 2, 2017 by Bruce Allen.
+// Released into the public domain on May 26, 2017 by Bruce Allen.
+
+// adapted from bulk_extractor/src/pattern_scanner.cpp
 
 #include <config.h>
 #include <string>
 #include <sstream>
 #include <cstring>
-#include <set>
 #include <iostream>
-#include "be_scan.hpp"
-#include "scan_email.hpp"
-#include "scan_zip_gzip.hpp"
-#ifdef HAVE_DEVEL
-#include "scan_names.hpp"
-#endif
+#include <lightgrep/api.h>
+#include "lightgrep_wrapper.hpp"
 
-const char* be_scan_version() {
-  return PACKAGE_VERSION;
-}
+namespace lw {
 
-// ************************************************************
-// private support functions
-// ************************************************************
-// split()
-// adapted from http://stackoverflow.com/questions/236129/how-to-split-a-string-in-c
-static std::set<std::string> split(const std::string &s, char delim) {
-  std::set<std::string> elems;
-  std::stringstream ss(s);
-  std::string item;
-  while(std::getline(ss, item, delim)) {
-    elems.insert(item);
-  }
-  return elems;
-}
-
-  /**
-   * Copy the buffer, return NULL if malloc fails.
-   */
-static char* copy_buffer(const char* const buffer, size_t buffer_size) {
-  // skip if nothing to do
-  if (buffer == NULL) {
-    return NULL;
+  // parse error
+  std::string compose_parse_error(const LG_Error& error) {
+    stringstream ss;
+    ss << "Parse error on '" << h.RE << "' in " << Name
+       << ": " << err->Message;
+    return ss.str();
   }
 
-  // copy the buffer, else NULL on bad_alloc
-  char* b = new (std::nothrow) char[buffer_size];
-  if (b == NULL) {
-    std::cerr << "be_scan error: unable to allocate memory for buffer copy\n";
-    // malloc failed
-    return NULL;
-  }
-  ::memcpy(b, buffer, buffer_size);
-  return b;
-}
+  // private constructor
+  lw_t::lw_t() :
+         // Reuse the parsed pattern data structure for efficiency
+         parsed_pattern(lg_create_pattern()),
 
-namespace be_scan {
+         // Reserve space for 1M states in the automaton--will grow if needed
+         fsm(lg_create_fsm(1 << 20)), 
+
+         // Reserve space for 1000 patterns in the pattern map
+         pattern_info(lg_create_pattern_map(1000)),
+
+         program(0),
+
+//zzno         scanners()
+  {
+  }
+
+  // destructor
+  lw_t::~lw_t() {
+    lg_destroy_pattern(parsed_pattern);
+    lg_destroy_pattern_map(pattern_info);
+    lg_destroy_program(program);
+  }
+
+  // singleton lw_t provider
+  lw_t& lw_t::get() {
+    // creates singleton on first invocation
+    static lw_t lw;
+    return lw;
+  }
+
+  std::string lw_t::add_regex(const std::string& regex,
+                              const regex_settings_t& regex_settings,
+                              zzcallback_function f);
+
+    // configure LG_KeyOptions from regex_settings_t
+    LG_KeyOptions key_options;
+    key_options.FixedString = (regex_settings.is_fixed_string) ? 1 : 0;
+    key_options.CaseInsensitive = (regex_settings.is_case_insensitive) ? 1 : 0;
+
+    // potential error
+    LG_Error *error;
+
+    // parse into pattern handle
+    int success = lg_parse_pattern(pattern_handle,
+                                   regex.c_str(),
+                                   key_options,
+                                   &error);
+
+    // done if parse error
+    if (success != 0) {
+      const std::string parse_error = compose_parse_error(*error);
+      delete error;
+      return parse_error;
+    }
+
+    // add the pattern
+    lg_add_pattern(
+zz
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ************************************************************
 // general support
