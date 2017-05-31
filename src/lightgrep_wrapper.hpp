@@ -20,6 +20,19 @@
 /**
  * \file
  * Header file for the lightgrep_wrapper library.
+ *
+ * Usage:
+ *     1 - Obtain a lw_t instance.  Although not a singleton, you should
+ *         only need one.
+ *     2 - Add regular expression definitions.
+ *     3 - When done adding definitions, finalize them before scanning.
+ *     4 - Once finalized, get scanners to use to scan data.  Scanners
+ *         are threadsafe, so get one per CPU for parallelization.
+ *     5 - Use your scanners to scan data using scan, scan_fence, and
+ *         scan_finalize interfaces.  scan_finalize scans for final
+ *         matches and then resets the scanner by resetting the stream
+ *         offset count back to 0.  Use scan_fence if you need to capture
+ *         matches that start before the fence but span across it.
  */
 
 #ifndef LIGHTGREP_WRAPPER_HPP
@@ -28,34 +41,49 @@
 #include <string>
 #include <stdint.h>
 
+/**
+ * the typedef for user-provided scan callback functions with user data.
+ *
+ * The function returns the start and size of the match data and the
+ * user data you provided when you created your scanner instance.
+ * user data you provided when you created your lightgrep wrapper instance.
+ *
+ * Parameters:
+ *   start - Start offset of the scan hit with respect to the beginning
+ *           of the scan stream.
+ *   size - The size of the scan hit data.
+ *   user_data - The user data provided when you called lw_t::new_lw_scanner
+typedef void (*scan_callback_type)(const uint64_t &start,
+                                   const uint64_t &size,
+                                   const void* &user_data);
+
 namespace lw {
 
-  /**
-   * Configure regular expression settings as desired.
-   */
-  class regex_settings_t {
-    public:
-    const std::string encoding;
-    const bool is_case_insensitive;
-    const bool is_fixed_string;
-  }
+  class lw_scanner_t;
+
+//  /**
+//   * Configure regular expression settings as desired.
+//   */
+//  class regex_settings_t {
+//    public:
+//    const std::string character_encoding;
+//    const bool is_case_insensitive;
+//    const bool is_fixed_string;
+//  }
+
+  template <class F, class D>
 
   /**
-   * The lightgrep wrapper singleton.  Usage:
-   *     - Add regular expression definitions.
-   *     - When done adding definitions, finalize them before scanning.
-   *     - Once finalized, get threadsafe scanners and use them to scan data.
+   * The lightgrep wrapper singleton.
    */
   class lw_t {
-    private:
-    LG_HPATTERN     parsed_pattern;
-    LG_HFSM         fsm;
-    LG_HPATTERNMAP  pattern_info;
-    LG_HPROGRAM     program;
-    vector<PatternScanner*> scanners;
 
-    lw_t();
-    ~lw_t();
+    private:
+    LG_HPATTERN     pattern_handle;//zz was parsed_pattern;
+    LG_HFSM         fsm;
+    LG_HPATTERNMAP  pattern_map;
+    LG_HPROGRAM     program;
+    std::vector<lw_scanner_t*> lw_scanners;
 
     // do not allow copy or assignment
     lw_t(const lw_t&) = delete;
@@ -63,20 +91,26 @@ namespace lw {
 
     public:
     /**
-     * Get the Lightgrep Wrapper singleton.
-     *
-     * Returns:
-     *  The Lightgrep Wrapper singleton.
+     * Create a lightgrep wrapper object to use for building a scan program
+     * and obtaining scanners.
      */
-    static lw_t* get();
+    lw_t();
+
+    /**
+     * Destructor releases lightgrep wrapper resources and scanner
+     * resources.
+     */
+    ~lw_t();
 
     /**
      * Add a regular expression definition to scan for.
      *
      * Parameters:
      *   regex - The regular expression text.
-     *   regex_settings - Regular expression settings to apply to this
-     *                    regular expression.
+     *   character_encoding - Encoding, for example UTF-8, UTF-16LE.
+     *   is_case_insensitive - Select upper/lower case insensitivity.
+     *   is_fixed_string - false=grep, true=fixed-string.  Use false.
+
      *   callback_function - The function to call to service hits associated
      *                       with this regular expression.
      *
@@ -84,29 +118,37 @@ namespace lw {
      *   "" if accepted else error text on failure.
      */
     std::string add_regex(const std::string& regex,
-                          const regex_settings_t& regex_settings,
+                          const std::string& character_encoding,
+                          const bool is_case_insensitive,
+                          const bool is_fixed_string,
                           zzcallback_function f);
 
     /**
      * Finalize the regular expression engine so it can be used for scanning.
+     *
+     * Parameters:
+     *   is_determinized - false=NFA, true=DFA(pseudo).  Use false.
      */
-    void finalize_regex();
+    void finalize_regex(const bool is_determinized);
 
     /**
      * Get a scanner to scan data with.  Get one for each CPU, they are
-     * threadsafe.  Returns nullprt if called before calling finalize_regex().
+     * threadsafe.  Be sure to use your user_data in a threadsafe way.
+     * Returns nullprt if called before calling finalize_regex().
+     *
+     * Do not delete these.  Let lw_t do this.  Re-use these instead of
+     * creating more than you need.
+     *
+     * Parameters:
+     *   user_data - User data for your callback function provided in
+     *               the add_regex function.
      *
      * Returns:
-     *   A scanner instance to scan data with.  Threadsafe.  Delete when
-     *   done to avoid a memory leak.
+     *   A scanner instance to scan data with.  Threadsafe.  Be sure
+     *   that your user_data is also threadsafe.  Delete when done to
+     *   avoid a memory leak.
      */
-    lw_scanner_t* new_scanner();
-
-    /**
-     * Deallocates all resources including any open scanners.
-     */
-    static void close();
-
+    lw_scanner_t* new_lw_scanner(void* user_data);
   };
 
   /**
@@ -114,9 +156,23 @@ namespace lw {
    * memory leak.
    */
   class lw_scanner_t {
+
+    // only lw_t::new_scanner() will use the lw_scanner_t constructor
+    friend class lw_t;
+
     private:
+    const LG_HCONTEXT searcher;
+    const void* user_data;
+    uint64_t start_offset;
+
+    lw_scanner_t(const LG_HCONTEXT p_searcher, void* p_user_data);
+
+    // do not allow copy or assignment
+    lw_scanner_t(const lw_scanner_t&) = delete;
+    lw_scanner_t& operator=(const lw_scanner_t&) = delete;
 
     public:
+
     /**
      * Scan bytes of data from a buffer.  Call repeatedly, as needed,
      * to scan a data stream that is larger than your buffer.
@@ -129,7 +185,7 @@ namespace lw {
      *   Nothing, but the associated callback function is called for each
      *   match hit.
      */
-    void scan(char* buffer, size_t count);
+    void scan(char* buffer, size_t size);
 
     /**
      * Scan into more bytes of data in order to find matches that started
@@ -144,7 +200,7 @@ namespace lw {
      *   Nothing, but the associated callback function is called for each
      *   match hit that started before the fence.
      */
-    void scan_fence(char* buffer, size_t count);
+    void scan_fence(char* buffer, size_t size);
 
     /**
      * End scanning, accepting any active hits that are valid.  The scanner

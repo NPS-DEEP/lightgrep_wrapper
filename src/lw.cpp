@@ -30,288 +30,195 @@
 namespace lw {
 
   // parse error
-  std::string compose_parse_error(const LG_Error& error) {
+  std::string compose_error(const LG_Error& error) {
     stringstream ss;
     ss << "Parse error on '" << h.RE << "' in " << Name
        << ": " << err->Message;
     return ss.str();
   }
 
-  // private constructor
+  // lw data and user data packed together for lightgrep callback
+  typedef struct {
+    // pattern map containing indexed callback function pointers
+    LG_HPATTERNMAP pattern_map;
+
+    // user data
+    void* user_data;
+  } lg_and_user_data_t;
+
+  // stage 1 lightgrep callback function
+  void lightgrep_callback(void* p_data, const LG_SearchHit* hit) {
+    // get lg_and_user_data
+    lg_and_user_data_t* lg_and_user_data(
+                                  static_cast<lg_and_user_data_t*>(p_data));
+
+    // get the stage 2 user-provided scan callback function
+    scan_callback_type* scan_callback(static_cast<stage2_callback_type*>(
+                            lg_pattern_info(lg_and_user_data->pattern_map,
+                            hit.KeywordIndex)->UserData));
+
+    // call out to the stage 2 user-provided scan callback function
+    (*scan_callback)(hit->Start,
+                     hit->End - hit->Start,
+                     lg_and_user_data->user_data);
+  }
+
+  // constructor
   lw_t::lw_t() :
          // Reuse the parsed pattern data structure for efficiency
-         parsed_pattern(lg_create_pattern()),
+         pattern_handle(lg_create_pattern()),
 
          // Reserve space for 1M states in the automaton--will grow if needed
-         fsm(lg_create_fsm(1 << 20)), 
+         fsm(lg_create_fsm(1 << 20)),
 
          // Reserve space for 1000 patterns in the pattern map
-         pattern_info(lg_create_pattern_map(1000)),
+         pattern_map(lg_create_pattern_map(1000)),
 
-         program(0),
+         // program exists once regex's are finalized
+         program(nullptr),
 
-//zzno         scanners()
+         // the list of user-requested lw_scanners
+         lw_scanners()
   {
   }
 
   // destructor
   lw_t::~lw_t() {
-    lg_destroy_pattern(parsed_pattern);
-    lg_destroy_pattern_map(pattern_info);
+    if (pattern_handle != nullptr) {
+      // in normal workflow, pattern_handle is destroyed by finalize_regex
+      lg_destroy_pattern(pattern_handle);
+    }
+    lg_destroy_pattern_map(pattern_map);
     lg_destroy_program(program);
+
+    // destroy all allocated scanners
+    for (auto it = lw_scanners.begin(); it != scanners.end; ++it) {
+      delete *it;
+    }
   }
 
-  // singleton lw_t provider
-  lw_t& lw_t::get() {
-    // creates singleton on first invocation
-    static lw_t lw;
-    return lw;
-  }
-
+  // add_regex
   std::string lw_t::add_regex(const std::string& regex,
-                              const regex_settings_t& regex_settings,
-                              zzcallback_function f);
+                              const std::string& character_encoding,
+                              const bool is_case_insensitive,
+                              const bool is_fixed_string,
+                              zzcallback_function f) {
 
     // configure LG_KeyOptions from regex_settings_t
     LG_KeyOptions key_options;
-    key_options.FixedString = (regex_settings.is_fixed_string) ? 1 : 0;
-    key_options.CaseInsensitive = (regex_settings.is_case_insensitive) ? 1 : 0;
+    key_options.FixedString = (is_fixed_string) ? 1 : 0;
+    key_options.CaseInsensitive = (is_case_insensitive) ? 1 : 0;
 
     // potential error
     LG_Error *error;
 
-    // parse into pattern handle
+    // parse regex into pattern
     int success = lg_parse_pattern(pattern_handle,
                                    regex.c_str(),
                                    key_options,
                                    &error);
 
-    // done if parse error
+    // bad if parse error
     if (success != 0) {
-      const std::string parse_error = compose_parse_error(*error);
+      const std::string parse_error = compose_error(*error);
       delete error;
       return parse_error;
     }
 
     // add the pattern
-    lg_add_pattern(
-zz
+    int index = lg_add_pattern(fsm,
+                               pattern_map,
+                               pattern_handle,
+                               character_encoding,
+                               &error);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ************************************************************
-// general support
-// ************************************************************
-  // Version of the be_scan library.
-  const char* version() {
-    return PACKAGE_VERSION;
-  }
-
-  // loopback test
-  void be_scan_t::test_loopback(std::string& s) const {
-    s = std::string(buffer, buffer_size);
-  }
-
-  // escape
-  static std::string hexesc(unsigned char ch) {
-    char buf[10];
-    snprintf(buf,sizeof(buf),"\\x%02X",ch);
-    return std::string(buf);
-  }
-  std::string escape(const std::string &in) {
-    std::stringstream ss;
-    for(std::string::const_iterator it = in.begin(); it != in.end(); it++) {
-      unsigned char c = *it;
-
-      if (c < ' ' || c > '~' || c == '\\') {
-        // show as \xXX
-        ss << hexesc(c);
-      } else {
-        // show ascii character
-        ss << c;
-      }
-    }
-    return ss.str();
-  }
-  std::string escape(const char* const p_buffer, size_t p_buffer_size) {
-    return escape(std::string(p_buffer, p_buffer_size));
-  }
-
-// ************************************************************
-// scanner
-// ************************************************************
-  // available scanners
-  std::string available_scanners() {
-#ifdef HAVE_DEVEL
-    return "email zip_gzip names";
-#else
-    return "email zip_gzip";
-#endif
-  }
-
-  // constructor
-  be_scan_t::be_scan_t(const std::string& p_requested_scanners,
-                       const std::string& p_avro_filename) :
-                scanners(split(p_requested_scanners, ' '),
-                avro_filename(p_avro_filename) {
-  }
-
-  std::string be_scan_t::scan(const char* const buffer,
-                              size_t buffer_size) {
-
-    // run each requested scanner
-    for (auto it = scanners.begin(); it != scanners.end(); ++it) {
-
-      if (scanner == "email") {
-        opened_scanner = scan_email(buffer, buffer_size);
-        break;
-#ifdef HAVE_DEVEL
-      } else if (scanner == "names") {
-        opened_scanner = scan_names(buffer, buffer_size);
-        break;
-#endif
-      } else if (scanner == "zip_gzip") {
-        opened_scanner = scan_zip_gzip(buffer, buffer_size);
-        break;
-      } else {
-        std::cerr << "be_scan_error: unrecognized scanner type '"
-                  << scanner << "'\n";
-      }
-
-
-
-
-
-
-  be_scan_t::be_scan_t(const std::string& p_requested_scanners,
-                       const artifact_t& artifact) :
-                buffer(copy_buffer(artifact.new_buffer,
-                                   artifact.new_buffer_size)),
-                buffer_size(artifact.new_buffer_size),
-                scanners(std::set<std::string>()),
-                scanner_it(),
-                opened_scanner(NULL),
-                bad_alloc(buffer == NULL) {
-
-    if (bad_alloc) {
-      // the buffer was not allocated so stay closed
-      return;
+    // bad if pattern error
+    if (index < 0) {
+      const std::string pattern_error = compose_error(*error);
+      delete error;
+      return pattern_error;
     }
 
-    // identify the requested scanners
-    scanners = split(p_requested_scanners, ' ');
-
-    // start the scanner iterator
-    scanner_it = scanners.begin();
-
-    // open the next scanner
-    open_next();
+    // add the handler callback to the pattern map associated with
+    // the pattern index
+    lg_pattern_info(PatternInfo, idx)->UserData =
+                        const_cast<void*>(static_cast<const void*>(&f));
   }
 
+  // finalize_regex
+  void lw_t::finalize_regex(const bool is_determinized) {
 
-  void be_scan_t::open_next() {
-    while (scanner_it != scanners.end()) {
-      std::string scanner = *scanner_it++;
-      if (scanner == "email") {
-        opened_scanner = scan_email(buffer, buffer_size);
-        break;
-#ifdef HAVE_DEVEL
-      } else if (scanner == "names") {
-        opened_scanner = scan_names(buffer, buffer_size);
-        break;
-#endif
-      } else if (scanner == "zip_gzip") {
-        opened_scanner = scan_zip_gzip(buffer, buffer_size);
-        break;
-      } else {
-        std::cerr << "be_scan_error: unrecognized scanner type '"
-                  << scanner << "'\n";
-      }
-    }
+    // discard the pattern handle now that we've parsed all patterns
+    lg_destroy_pattern(pattern_handle);
+    pattern_handle = nullptr;
+
+    // create a "program" from the parsed keywords
+    LG_ProgramOptions program_options;
+    program_options.Determinize = is_determinized;
+    program = lg_create_program(fsm, &program_options);
+
+    // discard the FSM now that we have a program
+    lg_destroy_fsm(fsm);
+    fsm = nullptr;
   }
 
-  void be_scan_t::close_opened() {
-    if (opened_scanner != NULL) {
-      delete opened_scanner;
-      opened_scanner = NULL;
+  // new scanner
+  lw_scanner_t* lw_t::new_lw_scanner(const void* user_data) {
+
+    if (program == nullptr) {
+      // lw_t is not ready for this request
+      std::cout << "Usage error: new_lw_scanner called"
+                << " before finalize_regex.\n";
+      return nullptr;
     }
+
+    // create a search context
+    LG_ContextOptions context_options;
+    context_options.TraceBegin = 0xffffffffffffffff;
+    context_options.TraceEnd   = 0;
+    LG_HCONTEXT searcher = lg_create_context(program, &context_options);
+
+    // this is the only place the lw_scanner_t constructor is called
+    lw_scanner_t* lw_scanner =
+                      new lw_scanner_t(program, &context_options, user_data);
+    lw_scanners.push_back(lw_scanner);
+    return lw_scanner;
   }
 
-  artifact_t be_scan_t::next() {
-    if (bad_alloc) {
-      // return a bad_alloc artifact
-      std::cerr << "be_scan error: not initialized, unable to allocate buffer resources\n";
-      return artifact_t("", 0, "", "", NULL, 0, true);
-    }
-    // return the next artifact, progressing through scanners as they finish
-    while (opened_scanner != NULL) {
-      artifact_t artifact = opened_scanner->next();
-      if(artifact.artifact_class != "") {
-        // this scanner has an artifact to return
-        return artifact;
-      } else {
-        // this scanner has no artifact so move on to the next
-        close_opened();
-        open_next();
-      }
-    }
-
-    // no more scanners so done
-    return artifact_t();
+  // private lw_scanner_t constructor
+  lw_scanner_t::lw_scanner_t(LG_HCONTEXT p_searcher, void* p_user_data) :
+                   searcher(p_searcher),
+                   user_data(p_user_data),
+                   start_offset(0) {
   }
 
-  // destructor
-  be_scan_t::~be_scan_t() {
-    // close scanner if open
-    close_opened();
+  // scan
+  void scan(const char* buffer, size_t size) {
+    lg_search(searcher,
+              buffer,
+              size,
+              start_offset,
+              user_data,
+              lightgrep_callback);
+    start_offset += size;
+  }
 
-    // delete the allocated buffer
-    if (buffer != NULL) {
-      delete[] buffer;
-    }
+  // scan_fence
+  void scan_fence(const char* buffer, size_t size) {
+    lg_search_resolve(searcher,
+                      buffer,
+                      size,
+                      start_offset,
+                      user_data,
+                      lightgrep_callback);
+    start_offset += size;
+  }
+
+  // scan_finalize
+  void scan_finalize() {
+    lg_closeout_search(searcher,
+                       user_data,
+                       lightgrep_callback);
   }
 }
 
