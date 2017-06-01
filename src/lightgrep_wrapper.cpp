@@ -30,10 +30,9 @@
 namespace lw {
 
   // parse error
-  std::string compose_error(const LG_Error& error) {
-    stringstream ss;
-    ss << "Parse error on '" << h.RE << "' in " << Name
-       << ": " << err->Message;
+  std::string compose_error(const std::string& regex, const LG_Error& error) {
+    std::stringstream ss;
+    ss << "Parse error in expression '" << regex << "': " << error.Message;
     return ss.str();
   }
 
@@ -54,8 +53,8 @@ namespace lw {
 
     // get the stage 2 user-provided scan callback function
     scan_callback_function_type* scan_callback_function(
-                 static_cast<stage2_callback_type*>(lg_pattern_info(
-                 lg_and_user_data->pattern_map, hit.KeywordIndex)->UserData));
+                 static_cast<scan_callback_function_type*>(lg_pattern_info(
+                 lg_and_user_data->pattern_map, hit->KeywordIndex)->UserData));
 
     // call out to the stage 2 user-provided scan callback function
     (*scan_callback_function)(hit->Start,
@@ -92,7 +91,7 @@ namespace lw {
     lg_destroy_program(program);
 
     // destroy all allocated scanners
-    for (auto it = lw_scanners.begin(); it != scanners.end; ++it) {
+    for (auto it = lw_scanners.begin(); it != lw_scanners.end(); ++it) {
       delete *it;
     }
   }
@@ -110,17 +109,17 @@ namespace lw {
     key_options.CaseInsensitive = (is_case_insensitive) ? 1 : 0;
 
     // potential error
-    LG_Error *error;
+    LG_Error* error;
 
     // parse regex into pattern
     int success = lg_parse_pattern(pattern_handle,
                                    regex.c_str(),
-                                   key_options,
+                                   &key_options,
                                    &error);
 
     // bad if parse error
     if (success != 0) {
-      const std::string parse_error = compose_error(*error);
+      const std::string parse_error = compose_error(regex, *error);
       delete error;
       return parse_error;
     }
@@ -129,12 +128,12 @@ namespace lw {
     int index = lg_add_pattern(fsm,
                                pattern_map,
                                pattern_handle,
-                               character_encoding,
+                               character_encoding.c_str(),
                                &error);
 
     // bad if pattern error
     if (index < 0) {
-      const std::string pattern_error = compose_error(*error);
+      const std::string pattern_error = compose_error(regex, *error);
       delete error;
       return pattern_error;
     }

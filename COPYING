@@ -12,6 +12,6 @@ acknowledges that this software contains work which was created by
 NPS government employees and is therefore in the public domain and
 not subject to copyright.
 
-However, because lightgrep_wrapper includes source modules, the
-compiled hashdb executable may be covered under a different copyright.
+However, because lightgrep_wrapper includes source modules, the compiled
+lightgrep_wrapper library may be covered under a different copyright.
 

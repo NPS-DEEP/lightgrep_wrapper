@@ -38,6 +38,8 @@
 #define LIGHTGREP_WRAPPER_HPP
 
 #include <string>
+#include <vector>
+#include <sstream>
 #include <stdint.h>
 
 /**
@@ -54,7 +56,7 @@
  */
 typedef void (*scan_callback_function_type)(const uint64_t &start,
                                             const uint64_t &size,
-                                            const void* &user_data);
+                                            const void* user_data);
 
 namespace lw {
 
