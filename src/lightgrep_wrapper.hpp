@@ -84,8 +84,7 @@ namespace lw {
     lw_t();
 
     /**
-     * Destructor releases lightgrep wrapper resources and scanner
-     * resources.
+     * Release resources.
      */
     ~lw_t();
 

@@ -56,28 +56,6 @@ fi
 AC_DEFINE([__LINUX__],1,[Linux operating system functions])
 CPPFLAGS="$CPPFLAGS -fPIC"
 
-## SWIG Python
-m4_include([m4/ax_pkg_swig.m4])
-AX_PKG_SWIG(1.0.0, [], [ AC_MSG_ERROR([SWIG is required to build API bindings]) ])
-m4_include([m4/ax_python_devel.m4])
-m4_include([m4/ax_swig_enable_cxxx.m4])
-m4_include([m4/ax_swig_python.m4])
-AX_SWIG_PYTHON
-AX_SWIG_ENABLE_CXX
-
-## SWIG Java
-m4_include([m4/ax_jni_include_dir.m4])
-AX_JNI_INCLUDE_DIR
-for JNI_INCLUDE_DIR in $JNI_INCLUDE_DIRS
-  do
-          JNI_CPPFLAGS="$JNI_CPPFLAGS -I$JNI_INCLUDE_DIR"
-  done
-AM_CONDITIONAL([JNI_CPPFLAGS], [test "$JNI_CPPFLAGS" != ""])
-if test "$JNI_CPPFLAGS" == "" ; then
-  AC_MSG_ERROR([Java JNI is not available.  Please install Java Devel.])
-fi
-AC_ARG_VAR(JNI_CPPFLAGS, [includes for Java JNI Header files])
-
 ################################################################
 # support for mallinfo for malloc usage reporting
 AC_CHECK_HEADERS([malloc.h])
@@ -170,9 +148,6 @@ AC_MSG_NOTICE([
   CXXFLAGS:         $CXXFLAGS
   LIBS:             $LIBS
   LDFLAGS:          $LDFLAGS
-  JNI_CPPFLAGS      $JNI_CPPFLAGS
-
-  PYTHON_VERSION:   $PYTHON_VERSION
 ])
   
 AC_OUTPUT
