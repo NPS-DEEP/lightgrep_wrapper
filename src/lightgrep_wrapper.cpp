@@ -53,14 +53,14 @@ namespace lw {
                                   static_cast<lg_and_user_data_t*>(p_data));
 
     // get the stage 2 user-provided scan callback function
-    scan_callback_type* scan_callback(static_cast<stage2_callback_type*>(
-                            lg_pattern_info(lg_and_user_data->pattern_map,
-                            hit.KeywordIndex)->UserData));
+    scan_callback_function_type* scan_callback_function(
+                 static_cast<stage2_callback_type*>(lg_pattern_info(
+                 lg_and_user_data->pattern_map, hit.KeywordIndex)->UserData));
 
     // call out to the stage 2 user-provided scan callback function
-    (*scan_callback)(hit->Start,
-                     hit->End - hit->Start,
-                     lg_and_user_data->user_data);
+    (*scan_callback_function)(hit->Start,
+                              hit->End - hit->Start,
+                              lg_and_user_data->user_data);
   }
 
   // constructor
@@ -102,7 +102,7 @@ namespace lw {
                               const std::string& character_encoding,
                               const bool is_case_insensitive,
                               const bool is_fixed_string,
-                              zzcallback_function f) {
+                              scan_callback_function_type* f) {
 
     // configure LG_KeyOptions from regex_settings_t
     LG_KeyOptions key_options;
@@ -193,7 +193,7 @@ namespace lw {
   }
 
   // scan
-  void scan(const char* buffer, size_t size) {
+  void lw_scanner_t::scan(const char* buffer, size_t size) {
     lg_search(searcher,
               buffer,
               size,
@@ -204,7 +204,7 @@ namespace lw {
   }
 
   // scan_fence
-  void scan_fence(const char* buffer, size_t size) {
+  void lw_scanner_t::scan_fence(const char* buffer, size_t size) {
     lg_search_resolve(searcher,
                       buffer,
                       size,
@@ -215,7 +215,7 @@ namespace lw {
   }
 
   // scan_finalize
-  void scan_finalize() {
+  void lw_scanner_t::scan_finalize() {
     lg_closeout_search(searcher,
                        user_data,
                        lightgrep_callback);

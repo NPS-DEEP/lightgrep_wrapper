@@ -22,13 +22,12 @@
  * Header file for the lightgrep_wrapper library.
  *
  * Usage:
- *     1 - Obtain a lw_t instance.  Although not a singleton, you should
- *         only need one.
+ *     1 - Obtain a lw_t instance.
  *     2 - Add regular expression definitions.
  *     3 - When done adding definitions, finalize them before scanning.
- *     4 - Once finalized, get scanners to use to scan data.  Scanners
- *         are threadsafe, so get one per CPU for parallelization.
- *     5 - Use your scanners to scan data using scan, scan_fence, and
+ *     4 - Once finalized, get lw_scanner_t instances to use to scan data.
+ *         Scanners are threadsafe, so get one per CPU for parallelization.
+ *     5 - Use scanner instances to scan data using scan, scan_fence, and
  *         scan_finalize interfaces.  scan_finalize scans for final
  *         matches and then resets the scanner by resetting the stream
  *         offset count back to 0.  Use scan_fence if you need to capture
@@ -46,40 +45,28 @@
  *
  * The function returns the start and size of the match data and the
  * user data you provided when you created your scanner instance.
- * user data you provided when you created your lightgrep wrapper instance.
  *
  * Parameters:
  *   start - Start offset of the scan hit with respect to the beginning
  *           of the scan stream.
  *   size - The size of the scan hit data.
- *   user_data - The user data provided when you called lw_t::new_lw_scanner
-typedef void (*scan_callback_type)(const uint64_t &start,
-                                   const uint64_t &size,
-                                   const void* &user_data);
+ *   user_data - The user data provided to lw_t::new_lw_scanner
+ */
+typedef void (*scan_callback_function_type)(const uint64_t &start,
+                                            const uint64_t &size,
+                                            const void* &user_data);
 
 namespace lw {
 
   class lw_scanner_t;
 
-//  /**
-//   * Configure regular expression settings as desired.
-//   */
-//  class regex_settings_t {
-//    public:
-//    const std::string character_encoding;
-//    const bool is_case_insensitive;
-//    const bool is_fixed_string;
-//  }
-
-  template <class F, class D>
-
   /**
-   * The lightgrep wrapper singleton.
+   * The lightgrep wrapper.
    */
   class lw_t {
 
     private:
-    LG_HPATTERN     pattern_handle;//zz was parsed_pattern;
+    LG_HPATTERN     pattern_handle;
     LG_HFSM         fsm;
     LG_HPATTERNMAP  pattern_map;
     LG_HPROGRAM     program;
@@ -121,7 +108,7 @@ namespace lw {
                           const std::string& character_encoding,
                           const bool is_case_insensitive,
                           const bool is_fixed_string,
-                          zzcallback_function f);
+                          scan_callback_function_type* f);
 
     /**
      * Finalize the regular expression engine so it can be used for scanning.
@@ -144,20 +131,17 @@ namespace lw {
      *               the add_regex function.
      *
      * Returns:
-     *   A scanner instance to scan data with.  Threadsafe.  Be sure
-     *   that your user_data is also threadsafe.  Delete when done to
-     *   avoid a memory leak.
+     *   A lw_scanner instance to scan data with.
      */
     lw_scanner_t* new_lw_scanner(void* user_data);
   };
 
   /**
-   * A threadsafe scanner instance.  Delete it when done to avoid a
-   * memory leak.
+   * A lw_scanner instance.
    */
   class lw_scanner_t {
 
-    // only lw_t::new_scanner() will use the lw_scanner_t constructor
+    // lw_t uses the lw_scanner_t constructor
     friend class lw_t;
 
     private:
@@ -183,7 +167,7 @@ namespace lw {
      *
      * Returns:
      *   Nothing, but the associated callback function is called for each
-     *   match hit.
+     *   match.
      */
     void scan(char* buffer, size_t size);
 
@@ -198,7 +182,7 @@ namespace lw {
      *
      * Returns:
      *   Nothing, but the associated callback function is called for each
-     *   match hit that started before the fence.
+     *   match that started before the fence.
      */
     void scan_fence(char* buffer, size_t size);
 
@@ -212,8 +196,8 @@ namespace lw {
      *
      * Returns:
      *   Nothing, but the associated callback function is called for each
-     *   active match hit that is valid.  This can happen when a match
-     *   could have been longer if there were more data.
+     *   active match that is valid.  This can happen when a match could
+     *   have been longer if there were more data.
      */
     void scan_finalize();
   };

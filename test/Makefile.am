@@ -17,21 +17,25 @@
 #
 # Released into the public domain on May 26, 2017 by Bruce Allen.
 
-# builds liblightgrep_wrapper.so
+# Builds tests
 
-LW_INCS = \
-	lightgrep_wrapper.cpp \
-	lightgrep_wrapper.hpp
+check_PROGRAMS = tests
 
-lib_LTLIBRARIES = liblightgrep_wrapper.la
+TESTS = tests
 
 AM_CFLAGS = $(LW_CFLAGS)
 AM_CXXFLAGS = $(LW_CXXFLAGS)
 
-liblightgrep_wrappwer_la_LDFLAGS = -PIC -avoid-version -module \
-                                   -export-dynamic -no-undefined
+AM_LDFLAGS = -static
 
-liblightgrep_wrapper_la_SOURCES = $(LW_INCS)
+LDADD = ../src/liblightgrep_wrappwer.la
 
-include_HEADERS = lightgrep_wrapper.hpp
+TESTS_INCS = \
+	tests.cpp \
+	unit_test.h
+
+# ############################################################
+# tests
+# ############################################################
+tests_SOURCES = $(TESTS_INCS)
 
