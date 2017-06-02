@@ -53,6 +53,7 @@ stamp-h
 stamp-h1
 build
 build_gcc
+build_clang
 *.pdf
 .DS_Store
 out-*/

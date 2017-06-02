@@ -21,14 +21,14 @@
 
 check_PROGRAMS = tests
 
-TESTS = tests
+TESTS = $(check_PROGRAMS)
 
 AM_CFLAGS = $(LW_CFLAGS)
 AM_CXXFLAGS = $(LW_CXXFLAGS)
 
 AM_LDFLAGS = -static
 
-LDADD = ../src/liblightgrep_wrappwer.la
+LDADD = ../src/liblightgrep_wrapper.la
 
 TESTS_INCS = \
 	tests.cpp \

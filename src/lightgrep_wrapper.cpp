@@ -36,30 +36,41 @@ namespace lw {
     return ss.str();
   }
 
-  // lw data and user data packed together for lightgrep callback
-  typedef struct {
-    // pattern map containing indexed callback function pointers
-    LG_HPATTERNMAP pattern_map;
-
-    // user data
-    void* user_data;
-  } lg_and_user_data_t;
-
   // stage 1 lightgrep callback function
-  void lightgrep_callback(void* p_data, const LG_SearchHit* hit) {
-    // get lg_and_user_data
-    lg_and_user_data_t* lg_and_user_data(
-                                  static_cast<lg_and_user_data_t*>(p_data));
+  void lightgrep_callback(void* p_data_pair, const LG_SearchHit* hit) {
+
+    // get data pair
+    data_pair_t* data_pair(static_cast<data_pair_t*>(p_data_pair));
+
+std::cerr << "lightgrep_callback: data_pair: " << data_pair
+          << ", pattern_map: " << data_pair->first
+          << ", user_data: " << data_pair->second
+          << std::endl;
+
+std::cerr << "lightgrep_callback pattern_map: " << data_pair->first
+          << ", index: " << hit->KeywordIndex
+          << ", callback: " << lg_pattern_info(data_pair->first, hit->KeywordIndex)->UserData
+          << std::endl;
+
+/*
+std::cerr << "lightgrep_callback: lg pattern_map data: " << lg_and_user_data->pattern_map << std::endl;
+std::cerr << "lightgrep_callback: &lg pattern_map data: " << &lg_and_user_data->pattern_map << std::endl;
+std::cerr << "lightgrep_callback: user data: " << lg_and_user_data->user_data << std::endl;
+std::cerr << "lightgrep_callback: &user data: " << &lg_and_user_data->user_data << std::endl;
+
+std::cerr << "lightgrep_callback: index: " << hit->KeywordIndex << ", UserData: " << lg_pattern_info(lg_and_user_data->pattern_map, hit->KeywordIndex)->UserData;
+*/
 
     // get the stage 2 user-provided scan callback function
-    scan_callback_function_type* scan_callback_function(
-                 static_cast<scan_callback_function_type*>(lg_pattern_info(
-                 lg_and_user_data->pattern_map, hit->KeywordIndex)->UserData));
+    scan_callback_function_t* scan_callback_function(
+                 static_cast<scan_callback_function_t*>(lg_pattern_info(
+                 data_pair->first, hit->KeywordIndex)->UserData));
+std::cerr << "lightgrep_callback: scan_callback_function address: " << &scan_callback_function << std::endl;
 
     // call out to the stage 2 user-provided scan callback function
     (*scan_callback_function)(hit->Start,
                               hit->End - hit->Start,
-                              lg_and_user_data->user_data);
+                              data_pair->second);
   }
 
   // constructor
@@ -79,6 +90,7 @@ namespace lw {
          // the list of user-requested lw_scanners
          lw_scanners()
   {
+std::cerr << "lw_t pattern_map: " << pattern_map << std::endl;
   }
 
   // destructor
@@ -101,7 +113,7 @@ namespace lw {
                               const std::string& character_encoding,
                               const bool is_case_insensitive,
                               const bool is_fixed_string,
-                              scan_callback_function_type* f) {
+                              scan_callback_function_t* f) {
 
     // configure LG_KeyOptions from regex_settings_t
     LG_KeyOptions key_options;
@@ -112,15 +124,16 @@ namespace lw {
     LG_Error* error;
 
     // parse regex into pattern
-    int success = lg_parse_pattern(pattern_handle,
-                                   regex.c_str(),
-                                   &key_options,
-                                   &error);
+    int status = lg_parse_pattern(pattern_handle,
+                                  regex.c_str(),
+                                  &key_options,
+                                  &error);
 
     // bad if parse error
-    if (success != 0) {
+    if (status == 0) {
       const std::string parse_error = compose_error(regex, *error);
-      delete error;
+      lg_free_error(error);
+      error = nullptr;
       return parse_error;
     }
 
@@ -134,14 +147,32 @@ namespace lw {
     // bad if pattern error
     if (index < 0) {
       const std::string pattern_error = compose_error(regex, *error);
-      delete error;
+      lg_free_error(error);
+      error = nullptr;
       return pattern_error;
     }
 
     // add the handler callback to the pattern map associated with
     // the pattern index
-    lg_pattern_info(PatternInfo, idx)->UserData =
-                        const_cast<void*>(static_cast<const void*>(&f));
+
+//std::cerr << "add_regex scan_callback_function0: "
+//          << (void*)*f << std::endl;
+
+std::cerr << "add_regex scan_callback_function: "
+          << const_cast<void*>(static_cast<const void*>(f))
+          << std::endl;
+
+    lg_pattern_info(pattern_map, index)->UserData =
+                        const_cast<void*>(static_cast<const void*>(f));
+
+std::cerr << "add_regex f: " << f
+          << ", pattern_map: " << pattern_map
+          << ", index: " << index
+          << ", UserData: " << lg_pattern_info(pattern_map, index)->UserData
+          << ", &UserData: " << &lg_pattern_info(pattern_map, index)->UserData
+          << std::endl;
+    // no error
+    return "";
   }
 
   // finalize_regex
@@ -162,7 +193,7 @@ namespace lw {
   }
 
   // new scanner
-  lw_scanner_t* lw_t::new_lw_scanner(const void* user_data) {
+  lw_scanner_t* lw_t::new_lw_scanner(void* user_data) {
 
     if (program == nullptr) {
       // lw_t is not ready for this request
@@ -179,45 +210,60 @@ namespace lw {
 
     // this is the only place the lw_scanner_t constructor is called
     lw_scanner_t* lw_scanner =
-                      new lw_scanner_t(program, &context_options, user_data);
+                      new lw_scanner_t(searcher, context_options,
+                                       pattern_map, user_data);
     lw_scanners.push_back(lw_scanner);
     return lw_scanner;
   }
 
   // private lw_scanner_t constructor
-  lw_scanner_t::lw_scanner_t(LG_HCONTEXT p_searcher, void* p_user_data) :
-                   searcher(p_searcher),
-                   user_data(p_user_data),
-                   start_offset(0) {
+  lw_scanner_t::lw_scanner_t(LG_HCONTEXT p_searcher,
+                             const LG_ContextOptions& p_context_options,
+                             LG_HPATTERNMAP pattern_map,
+                             void* user_data):
+             searcher(p_searcher),
+             data_pair(pattern_map, user_data),
+             start_offset(1000) {
+std::cerr << "lw_scanner_t &data_pair: " << &data_pair
+          << ", pattern_map: " << data_pair.first
+          << ", user_data: " << data_pair.second << std::endl;
   }
 
   // scan
-  void lw_scanner_t::scan(const char* buffer, size_t size) {
+  void lw_scanner_t::scan(const char* const buffer, size_t size) {
     lg_search(searcher,
               buffer,
-              size,
+              buffer + size,
               start_offset,
-              user_data,
+              &data_pair,
               lightgrep_callback);
-    start_offset += size;
-  }
-
-  // scan_fence
-  void lw_scanner_t::scan_fence(const char* buffer, size_t size) {
-    lg_search_resolve(searcher,
-                      buffer,
-                      size,
-                      start_offset,
-                      user_data,
-                      lightgrep_callback);
-    start_offset += size;
+    start_offset += size+100;
   }
 
   // scan_finalize
   void lw_scanner_t::scan_finalize() {
     lg_closeout_search(searcher,
-                       user_data,
+                       &data_pair,
                        lightgrep_callback);
+
+    start_offset = 0;
+  }
+
+  // scan_fence_finalize
+  void lw_scanner_t::scan_fence_finalize(const char* const buffer,
+                                         size_t size) {
+    lg_search_resolve(searcher,
+                      buffer,
+                      buffer + size,
+                      start_offset,
+                      &data_pair,
+                      lightgrep_callback);
+
+    lg_closeout_search(searcher,
+                       &data_pair,
+                       lightgrep_callback);
+
+    start_offset = 0;
   }
 }
 

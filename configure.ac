@@ -44,14 +44,6 @@ AC_C_BIGENDIAN
 m4_include([m4/lightgrep_wrapper_cflags.m4])
 
 ################################################################
-## establish default Python for tests and for SWIG
-AM_PATH_PYTHON([2.7],, [:])
-AM_CONDITIONAL([HAVE_PYTHON], [test "$PYTHON" != :])
-if test "$PYTHON" == : ; then
-  AC_MSG_ERROR([Python is not available.])
-fi
-
-################################################################
 ## Linux
 AC_DEFINE([__LINUX__],1,[Linux operating system functions])
 CPPFLAGS="$CPPFLAGS -fPIC"
@@ -73,6 +65,13 @@ AC_SYS_POSIX_TERMIOS
 AC_ARG_WITH([opt], AC_HELP_STRING([--without-opt], [Drop all -O C flags]))
 # Or maybe just tone it down a bit?
 AC_ARG_WITH([o3], AC_HELP_STRING([--without-o3], [Do not force O3 optimization; use default level]))
+
+################################################################
+## lightgrep is required
+AC_CHECK_LIB([lightgrep],[lg_create_fsm])
+if test x"$has_libtool" == "xfalse" ; then
+  AC_MSG_ERROR([libtool is required, please install libtool such as The GNU Portable Library Tool])
+fi
 
 ################################################################
 ## libtool required for preparing the liblightgrep_wrapper.so library

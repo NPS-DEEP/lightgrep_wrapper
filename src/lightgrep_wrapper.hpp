@@ -41,6 +41,7 @@
 #include <vector>
 #include <sstream>
 #include <stdint.h>
+#include <lightgrep/api.h>
 
 /**
  * the typedef for user-provided scan callback functions with user data.
@@ -54,13 +55,14 @@
  *   size - The size of the scan hit data.
  *   user_data - The user data provided to lw_t::new_lw_scanner
  */
-typedef void (*scan_callback_function_type)(const uint64_t &start,
-                                            const uint64_t &size,
-                                            const void* user_data);
+typedef void (*scan_callback_function_t)(const uint64_t start,
+                                         const uint64_t size,
+                                         void* user_data);
 
 namespace lw {
 
   class lw_scanner_t;
+  typedef std::pair<LG_HPATTERNMAP, void*> data_pair_t; // internall callback
 
   /**
    * The lightgrep wrapper.
@@ -109,7 +111,7 @@ namespace lw {
                           const std::string& character_encoding,
                           const bool is_case_insensitive,
                           const bool is_fixed_string,
-                          scan_callback_function_type* f);
+                          scan_callback_function_t* f);
 
     /**
      * Finalize the regular expression engine so it can be used for scanning.
@@ -147,10 +149,13 @@ namespace lw {
 
     private:
     const LG_HCONTEXT searcher;
-    const void* user_data;
+    data_pair_t data_pair;
     uint64_t start_offset;
 
-    lw_scanner_t(const LG_HCONTEXT p_searcher, void* p_user_data);
+    lw_scanner_t(const LG_HCONTEXT p_searcher,
+                 const LG_ContextOptions& p_context_options,
+                 LG_HPATTERNMAP pattern_map,
+                 void* user_data);
 
     // do not allow copy or assignment
     lw_scanner_t(const lw_scanner_t&) = delete;
@@ -170,26 +175,11 @@ namespace lw {
      *   Nothing, but the associated callback function is called for each
      *   match.
      */
-    void scan(char* buffer, size_t size);
+    void scan(const char* const buffer, size_t size);
 
     /**
-     * Scan into more bytes of data in order to find matches that started
-     * before the fence but span across it.  Potential hits across the
-     * fence are not tracked.
-     *
-     * Parameters:
-     *   buffer - The buffer to scan.
-     *   size - The size, in bytes, of the buffer to scan.
-     *
-     * Returns:
-     *   Nothing, but the associated callback function is called for each
-     *   match that started before the fence.
-     */
-    void scan_fence(char* buffer, size_t size);
-
-    /**
-     * End scanning, accepting any active hits that are valid.  The scanner
-     * is reset so that it may be used again.
+     * End scanning, accepting any active hits that are valid.  The stream
+     * counter is reset so that the scanner may be used again.
      *
      * Parameters:
      *   buffer - The buffer to scan.
@@ -201,6 +191,22 @@ namespace lw {
      *   have been longer if there were more data.
      */
     void scan_finalize();
+
+    /**
+     * Scan into more bytes of data in order to find matches that started
+     * before the fence but span across it, then end scanning, accepting
+     * any hits that are valid.  When done, the stream counter is reset
+     * so that the scanner may be used again.
+     *
+     * Parameters:
+     *   buffer - The buffer to scan.
+     *   size - The size, in bytes, of the buffer to scan.
+     *
+     * Returns:
+     *   Nothing, but the associated callback function is called for each
+     *   match that started before the fence.
+     */
+    void scan_fence_finalize(const char* const buffer, size_t size);
   };
 }
 
