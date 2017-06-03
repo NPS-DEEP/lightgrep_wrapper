@@ -24,6 +24,7 @@
 #include <sstream>
 #include <cstring>
 #include <iostream>
+#include <cassert>
 #include <lightgrep/api.h>
 #include "lightgrep_wrapper.hpp"
 
@@ -42,35 +43,13 @@ namespace lw {
     // get data pair
     data_pair_t* data_pair(static_cast<data_pair_t*>(p_data_pair));
 
-std::cerr << "lightgrep_callback: data_pair: " << data_pair
-          << ", pattern_map: " << data_pair->first
-          << ", user_data: " << data_pair->second
-          << std::endl;
-
-std::cerr << "lightgrep_callback pattern_map: " << data_pair->first
-          << ", index: " << hit->KeywordIndex
-          << ", callback: " << lg_pattern_info(data_pair->first, hit->KeywordIndex)->UserData
-          << std::endl;
-
-/*
-std::cerr << "lightgrep_callback: lg pattern_map data: " << lg_and_user_data->pattern_map << std::endl;
-std::cerr << "lightgrep_callback: &lg pattern_map data: " << &lg_and_user_data->pattern_map << std::endl;
-std::cerr << "lightgrep_callback: user data: " << lg_and_user_data->user_data << std::endl;
-std::cerr << "lightgrep_callback: &user data: " << &lg_and_user_data->user_data << std::endl;
-
-std::cerr << "lightgrep_callback: index: " << hit->KeywordIndex << ", UserData: " << lg_pattern_info(lg_and_user_data->pattern_map, hit->KeywordIndex)->UserData;
-*/
-
     // get the stage 2 user-provided scan callback function
-    scan_callback_function_t* scan_callback_function(
-                 static_cast<scan_callback_function_t*>(lg_pattern_info(
-                 data_pair->first, hit->KeywordIndex)->UserData));
-std::cerr << "lightgrep_callback: scan_callback_function address: " << &scan_callback_function << std::endl;
+    scan_callback_function_t f = data_pair->first->at(hit->KeywordIndex);
 
     // call out to the stage 2 user-provided scan callback function
-    (*scan_callback_function)(hit->Start,
-                              hit->End - hit->Start,
-                              data_pair->second);
+    (*f)(hit->Start,
+         hit->End - hit->Start,
+         data_pair->second);
   }
 
   // constructor
@@ -87,10 +66,12 @@ std::cerr << "lightgrep_callback: scan_callback_function address: " << &scan_cal
          // program exists once regex's are finalized
          program(nullptr),
 
+         // the list of scan callback function pointers
+         function_pointers(),
+
          // the list of user-requested lw_scanners
          lw_scanners()
   {
-std::cerr << "lw_t pattern_map: " << pattern_map << std::endl;
   }
 
   // destructor
@@ -113,7 +94,7 @@ std::cerr << "lw_t pattern_map: " << pattern_map << std::endl;
                               const std::string& character_encoding,
                               const bool is_case_insensitive,
                               const bool is_fixed_string,
-                              scan_callback_function_t* f) {
+                              const scan_callback_function_t f) {
 
     // configure LG_KeyOptions from regex_settings_t
     LG_KeyOptions key_options;
@@ -152,25 +133,14 @@ std::cerr << "lw_t pattern_map: " << pattern_map << std::endl;
       return pattern_error;
     }
 
-    // add the handler callback to the pattern map associated with
-    // the pattern index
+    // make sure index is in step with the function_pointers vector
+    if (function_pointers.size() != index) {
+      assert(0);
+    }
 
-//std::cerr << "add_regex scan_callback_function0: "
-//          << (void*)*f << std::endl;
+    // record the scan callback function pointer at the pattern index position
+    function_pointers.push_back(f);
 
-std::cerr << "add_regex scan_callback_function: "
-          << const_cast<void*>(static_cast<const void*>(f))
-          << std::endl;
-
-    lg_pattern_info(pattern_map, index)->UserData =
-                        const_cast<void*>(static_cast<const void*>(f));
-
-std::cerr << "add_regex f: " << f
-          << ", pattern_map: " << pattern_map
-          << ", index: " << index
-          << ", UserData: " << lg_pattern_info(pattern_map, index)->UserData
-          << ", &UserData: " << &lg_pattern_info(pattern_map, index)->UserData
-          << std::endl;
     // no error
     return "";
   }
@@ -211,7 +181,7 @@ std::cerr << "add_regex f: " << f
     // this is the only place the lw_scanner_t constructor is called
     lw_scanner_t* lw_scanner =
                       new lw_scanner_t(searcher, context_options,
-                                       pattern_map, user_data);
+                                       function_pointers, user_data);
     lw_scanners.push_back(lw_scanner);
     return lw_scanner;
   }
@@ -219,14 +189,11 @@ std::cerr << "add_regex f: " << f
   // private lw_scanner_t constructor
   lw_scanner_t::lw_scanner_t(LG_HCONTEXT p_searcher,
                              const LG_ContextOptions& p_context_options,
-                             LG_HPATTERNMAP pattern_map,
+                             function_pointers_t& function_pointers,
                              void* user_data):
              searcher(p_searcher),
-             data_pair(pattern_map, user_data),
+             data_pair(&function_pointers, user_data),
              start_offset(1000) {
-std::cerr << "lw_scanner_t &data_pair: " << &data_pair
-          << ", pattern_map: " << data_pair.first
-          << ", user_data: " << data_pair.second << std::endl;
   }
 
   // scan

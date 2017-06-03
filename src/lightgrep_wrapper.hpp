@@ -62,7 +62,8 @@ typedef void (*scan_callback_function_t)(const uint64_t start,
 namespace lw {
 
   class lw_scanner_t;
-  typedef std::pair<LG_HPATTERNMAP, void*> data_pair_t; // internall callback
+  typedef std::vector<scan_callback_function_t> function_pointers_t;
+  typedef std::pair<function_pointers_t*, void*> data_pair_t;
 
   /**
    * The lightgrep wrapper.
@@ -74,6 +75,11 @@ namespace lw {
     LG_HFSM         fsm;
     LG_HPATTERNMAP  pattern_map;
     LG_HPROGRAM     program;
+
+    // the scan callback function pointers
+    std::vector<scan_callback_function_t> function_pointers;
+
+    // lw_scanners
     std::vector<lw_scanner_t*> lw_scanners;
 
     // do not allow copy or assignment
@@ -111,7 +117,7 @@ namespace lw {
                           const std::string& character_encoding,
                           const bool is_case_insensitive,
                           const bool is_fixed_string,
-                          scan_callback_function_t* f);
+                          scan_callback_function_t f);
 
     /**
      * Finalize the regular expression engine so it can be used for scanning.
@@ -154,7 +160,7 @@ namespace lw {
 
     lw_scanner_t(const LG_HCONTEXT p_searcher,
                  const LG_ContextOptions& p_context_options,
-                 LG_HPATTERNMAP pattern_map,
+                 function_pointers_t& function_pointers,
                  void* user_data);
 
     // do not allow copy or assignment
