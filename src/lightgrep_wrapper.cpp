@@ -193,7 +193,7 @@ namespace lw {
                              void* user_data):
              searcher(p_searcher),
              data_pair(&function_pointers, user_data),
-             start_offset(1000) {
+             start_offset(0) {
   }
 
   // scan
@@ -204,7 +204,7 @@ namespace lw {
               start_offset,
               &data_pair,
               lightgrep_callback);
-    start_offset += size+100;
+    start_offset += size;
   }
 
   // scan_finalize
@@ -213,6 +213,7 @@ namespace lw {
                        &data_pair,
                        lightgrep_callback);
 
+    lg_reset_context(searcher);
     start_offset = 0;
   }
 
@@ -230,6 +231,7 @@ namespace lw {
                        &data_pair,
                        lightgrep_callback);
 
+    lg_reset_context(searcher);
     start_offset = 0;
   }
 }

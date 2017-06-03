@@ -73,48 +73,41 @@ void test1() {
   // create a lightgrep wrapper instance
   lw::lw_t lw;
 
-scan_callback_function_t scf1 = &callback_function1;
-std::cout << "&tests.scf1: " << &scf1 << std::endl;
-
   // add regex definitions
-  lw.add_regex("abc", "UTF-8", false, false, &scf1);
-
-//  lw.add_regex("bc", "UTF-8", false, false, &callback_function2);
-scan_callback_function_t scf2 = &callback_function2;
-std::cout << "&tests.scf2: " << &scf2 << std::endl;
-
-  lw.add_regex("bc", "UTF-8", false, false, &scf2);
-
-
-scan_callback_function_t scf3 = &callback_function3;
-  lw.add_regex("cab", "UTF-8", false, false, &scf3);
+  lw.add_regex("abc", "UTF-8", false, false, &callback_function1);
+  lw.add_regex("bc", "UTF-8", false, false, &callback_function2);
+  lw.add_regex("cab", "UTF-8", false, false, &callback_function3);
 
   // finalize regex definitions
   lw.finalize_regex(false);
 
   // create a user data instance
   user_data_t user_data("test1");
-std::cout << "&tests.user_data: " << &user_data << std::endl;
 
   // get a lw_scanner
   lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data);
 
   // make something to scan
-  const char c[] = "abcbabcbabcbabcbabcbabcbabcbabcbabc";
+  const char c[] = "abcbabcbabcbabc";
 
   // scan first bytes
-  lw_scanner->scan(c, 35);
+  std::cout << "test1 start 15\n";
+  lw_scanner->scan(c, 15);
 
   // scan again
-  lw_scanner->scan(c, 20);
+  std::cout << "test1 scan again 5\n";
+  lw_scanner->scan(c, 5);
 
   // scan across fence
-  lw_scanner->scan_fence_finalize(c+20, 35-20);
+  std::cout << "test1 scan fence\n";
+  lw_scanner->scan_fence_finalize(c+5, 15-5);
 
   // scan first bytes again
-  lw_scanner->scan(c, 35);
+  std::cout << "test1 scan first again\n";
+  lw_scanner->scan(c, 15);
 
   // finalize scan
+  std::cout << "test1 finalize\n";
   lw_scanner->scan_finalize();
 
   // show matches
@@ -124,7 +117,7 @@ std::cout << "&tests.user_data: " << &user_data << std::endl;
   }
 
   // validate size
-  TEST_EQ(user_data.matches.size(), 30);
+  TEST_EQ(user_data.matches.size(), 20);
 }
 
 // ************************************************************
