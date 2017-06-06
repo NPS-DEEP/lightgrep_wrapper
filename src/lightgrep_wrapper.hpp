@@ -106,7 +106,6 @@ namespace lw {
      *   character_encoding - Encoding, for example UTF-8, UTF-16LE.
      *   is_case_insensitive - Select upper/lower case insensitivity.
      *   is_fixed_string - false=grep, true=fixed-string.  Use false.
-
      *   callback_function - The function to call to service hits associated
      *                       with this regular expression.
      *
@@ -138,11 +137,15 @@ namespace lw {
      * Parameters:
      *   user_data - User data for your callback function provided in
      *               the add_regex function.
+     *   max_backtrack_size - The maximum number of backtrack bytes to use
+     *               for composing matches that span across buffers, use
+     *               zero if not streaming.
      *
      * Returns:
      *   A lw_scanner instance to scan data with.
      */
-    lw_scanner_t* new_lw_scanner(void* user_data);
+    lw_scanner_t* new_lw_scanner(void* user_data,
+                                 const size_t max_backtrack_size);
   };
 
   /**
@@ -158,14 +161,30 @@ namespace lw {
     data_pair_t data_pair;
     uint64_t start_offset;
 
+    // backtrack support for read
+    const size_t max_bt_size;
+    const char* bt_buf0;
+    size_t bt_buf0_size;
+    char* const bt_buf1;
+    size_t bt_buf1_size;
+    char* const bt_buf2;
+    size_t bt_buf2_size;
+
     lw_scanner_t(const LG_HCONTEXT p_searcher,
                  const LG_ContextOptions& p_context_options,
                  function_pointers_t& function_pointers,
-                 void* user_data);
+                 void* user_data,
+                 const size_t p_max_backtrack_size);
+
+    ~lw_scanner_t();
 
     // do not allow copy or assignment
     lw_scanner_t(const lw_scanner_t&) = delete;
     lw_scanner_t& operator=(const lw_scanner_t&) = delete;
+
+    // backtrack support for read
+    void bt_clear();
+    void bt_next(const char* const buffer, size_t size);
 
     public:
 
@@ -213,6 +232,28 @@ namespace lw {
      *   match that started before the fence.
      */
     void scan_fence_finalize(const char* const buffer, size_t size);
+
+    /**
+     * Read a string of data from the currently active buffer being scanned.
+     * For streaming scans where matches cross buffer boundaries, some
+     * backtrack bytes are preserved to recreate match data, see
+     * max_backtrack_bytes.  If there are not enough backtrack
+     * bytes, the returned match will be clipped.  The read function
+     * applies to buffers provided to the scan() and scan_fence_finalize()
+     * functions and requires that the currently active buffer be valid.
+     *
+     * Parameters:
+     *   match_offset - The offset into the stream where the match starts.
+     *   match_length - The length, in bytes, of the match.
+     *   padding - The number of padding bytes to provide before and after
+     *       the bytes of the actual match, useful for providing context.
+     *
+     * Returns:
+     *   The matched string along with any padding bytes, if requested.
+     */
+    std::string read(const size_t match_offset,
+                     const size_t match_length,
+                     const size_t match_padding);
   };
 }
 
