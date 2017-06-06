@@ -34,13 +34,12 @@ class user_data_t {
   user_data_t(const std::string& p_text) :
                        text(p_text), matches(), lw_scanner(nullptr) {
   }
-  std::string read(const uint64_t start, const uint64_t size,
-                   const size_t padding) {
+  std::string read(const uint64_t start, const uint64_t size) {
     if (lw_scanner == nullptr) {
-      std::cerr << "set up lw_scanner first\n";
+      std::cerr << "Error: set up lw_scanner in user_data before calling read in user_data\n";
       assert(0);
     }
-    return lw_scanner->read(start, size, padding);
+    return lw_scanner->read(start, size);
   }
 };
 
@@ -53,8 +52,7 @@ void report(const std::string& name,
      << ", user_data text: '" << user_data.text
      << "', start: " << start
      << ", size: " << size
-     << ", match: " << user_data.read(start, size, 0)
-     << ", context: " << user_data.read(start, size, 8);
+     << ", match: " << user_data.read(start, size);
   std::cout << ss.str() << std::endl;
   user_data.matches.push_back(ss.str());
 }
@@ -137,39 +135,32 @@ void test1() {
   TEST_EQ(user_data.matches.size(), 20);
 }
 
-void callback_read(const uint64_t start,
+void callback_stream_read(const uint64_t start,
                    const uint64_t size,
                    void* p_user_data) {
   // typecast void* p_user_data into user_dat_t* user_data
   user_data_t* d(static_cast<user_data_t*>(p_user_data));
   std::stringstream ss;
   ss << "start: " << start << ", size: " << size
-     << ", p0: " << d->read(start, size, 0)
-     << ", p1: " << d->read(start, size, 1)
-     << ", p2: " << d->read(start, size, 2)
-     << ", p3: " << d->read(start, size, 3)
-     << ", p4: " << d->read(start, size, 4)
-     << ", p5: " << d->read(start, size, 5);
+     << ", data: " << d->read(start, size);
   d->matches.push_back(ss.str());
 }
 
-void test_read_function() {
+void test_clipped_stream_read() {
   // create a lightgrep wrapper instance
   lw::lw_t lw;
 
   // add regex definitions
-  lw.add_regex("0", "UTF-8", false, false, &callback_read);
-  lw.add_regex("2", "UTF-8", false, false, &callback_read);
-  lw.add_regex("d", "UTF-8", false, false, &callback_read);
+  lw.add_regex("ef0", "UTF-8", false, false, &callback_stream_read);
 
   // finalize regex definitions
   lw.finalize_regex(false);
 
   // create a user data instance
-  user_data_t user_data("test_read_function");
+  user_data_t user_data("test_clipped_stream_read");
 
   // get a lw_scanner
-  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data, 4);
+  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data, 1);
 
   // set the scanner pointer
   user_data.lw_scanner = lw_scanner;
@@ -190,7 +181,66 @@ void test_read_function() {
   }
 
   // validate size
-  TEST_EQ(user_data.matches.size(), 9);
+  TEST_EQ(user_data.matches.size(), 2);
+  TEST_EQ(user_data.matches[0], "start: 14, size: 3, data: f0");
+  TEST_EQ(user_data.matches[1], "start: 30, size: 3, data: f0");
+}
+
+void callback_read_bounds(const uint64_t start,
+                          const uint64_t size,
+                          void* p_user_data) {
+  // typecast void* p_user_data into user_dat_t* user_data
+  user_data_t* d(static_cast<user_data_t*>(p_user_data));
+  std::string result = "0,1'"+d->read(0,1) +
+                      "' 15,1'"+d->read(15,1) +
+                      "' 15,2'"+d->read(15,2) +
+                      "' 15,17'"+d->read(15,17) +
+                      "' 15,18'"+d->read(15,18) +
+                      "' 16,1'"+d->read(16,1) +
+                      "' 16,16'"+d->read(16,16) +
+                      "'";
+  d->matches.push_back(result);
+}
+
+void test_read_bounds() {
+  // create a lightgrep wrapper instance
+  lw::lw_t lw;
+
+  // add regex definitions
+  lw.add_regex("0", "UTF-8", false, false, &callback_read_bounds);
+
+  // finalize regex definitions
+  lw.finalize_regex(false);
+
+  // create a user data instance
+  user_data_t user_data("test_read_bounds");
+
+  // get a lw_scanner
+  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data, 16);
+
+  // set the scanner pointer
+  user_data.lw_scanner = lw_scanner;
+
+  // make something to scan
+  const char c[] = "0123456789abcdef";
+
+  // scan stream round 1
+  std::cout << "test_read_bounds round 1\n";
+  lw_scanner->scan(c, 16);
+  TEST_EQ(user_data.matches.size(), 1);
+  TEST_EQ(user_data.matches[0], "0,1'0' 15,1'f' 15,2'' 15,17'' 15,18'' 16,1'' 16,16''");
+
+  // scan stream round 2
+  std::cout << "test_read_bounds round 2\n";
+  lw_scanner->scan(c, 16);
+  TEST_EQ(user_data.matches.size(), 2);
+  TEST_EQ(user_data.matches[1], "0,1'' 15,1'f' 15,2'f0' 15,17'f0123456789abcdef' 15,18'' 16,1'0' 16,16'0123456789abcdef'");
+
+  // scan stream round 3
+  std::cout << "test_read_bounds round 3\n";
+  lw_scanner->scan(c, 16);
+  TEST_EQ(user_data.matches.size(), 3);
+  TEST_EQ(user_data.matches[2], "0,1'' 15,1'' 15,2'' 15,17'0123456789abcdef' 15,18'0123456789abcdef0' 16,1'' 16,16'0123456789abcdef'");
 }
 
 // ************************************************************
@@ -200,7 +250,8 @@ int main(int argc, char* argv[]) {
 
   // tests
   test1();
-  test_read_function();
+  test_clipped_stream_read();
+  test_read_bounds();
 
   // done
   std::cout << "Tests Done.\n";

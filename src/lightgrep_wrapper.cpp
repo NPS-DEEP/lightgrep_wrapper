@@ -64,32 +64,6 @@ namespace lw {
          data_pair->second);
   }
 
-  // private backtrack read support for read
-  std::string bt_read(const char* const buffer,
-                      const size_t buffer_size,
-                      const size_t match_offset,
-                      const size_t match_length,
-                      const size_t match_padding) {
-
-    // handle empty input
-    if (buffer_size == 0) {
-      return "";
-    }
-std::cout << "bt_read.a: buffer_size: " << buffer_size << ", match_offset: " << match_offset << ", match_length: " << match_length << ", match_padding: " << match_padding << "\n";
-
-    // find valid bounds for the context
-    const size_t start = match_offset < match_padding ?
-                            0 : match_offset - match_padding;
-    const size_t stop = match_offset + match_length + match_padding >=
-                    buffer_size ? buffer_size - 1 :
-                    match_offset + match_length + match_padding - 1;
-
-std::cout << "bt_read.buffer: " << buffer << std::endl;
-std::cout << "bt_read.start: " << start << ", stop: " << stop << std::endl;
-    // return the context
-    return std::string(&buffer[start], stop - start + 1);
-  }
-
   // constructor
   lw_t::lw_t() :
          // Reuse the parsed pattern data structure for efficiency
@@ -206,8 +180,9 @@ std::cout << "bt_read.start: " << start << ", stop: " << stop << std::endl;
 
     if (program == nullptr) {
       // lw_t is not ready for this request
-      std::cout << "Usage error: new_lw_scanner called"
-                << " before finalize_regex.\n";
+      std::cout << "Usage error: At least one regex must be added and "
+                << "finalize_regex\nmust be called before new_lw_scanner "
+                << "may be called.  nullptr returned.\n";
       return nullptr;
     }
 
@@ -241,7 +216,8 @@ std::cout << "bt_read.start: " << start << ", stop: " << stop << std::endl;
              bt_buf1(new char[max_bt_size]),
              bt_buf1_size(0),
              bt_buf2(new char[max_bt_size]),
-             bt_buf2_size(0) {
+             bt_buf2_size(0),
+             can_read(false) {
   }
 
   lw_scanner_t::~lw_scanner_t() {
@@ -268,11 +244,9 @@ std::cout << "bt_read.start: " << start << ", stop: " << stop << std::endl;
 
     // copy backtrack part of buffer to b1
     bt_buf1_size = bt_buf0_size < max_bt_size ? bt_buf0_size : max_bt_size;
-std::cout << "bt_buf0_size: " << bt_buf0_size << ", bt_buf1_size: " << bt_buf1_size << ", max_bt_size: " << max_bt_size << "\n";
-std::cerr << "b0: " << bt_buf0[1] << std::endl;
-std::cerr << "b1: " << bt_buf1[1] << std::endl;
+    const size_t offset = bt_buf0_size - bt_buf1_size;
 
-    std::memcpy(bt_buf1, bt_buf0, bt_buf1_size);
+    std::memcpy(bt_buf1, bt_buf0 + offset, bt_buf1_size);
   }
 
   // scan
@@ -280,6 +254,7 @@ std::cerr << "b1: " << bt_buf1[1] << std::endl;
 
     // next read
     bt_next(buffer, size);
+    can_read = true;
 
     // scan
     lg_search(searcher,
@@ -290,6 +265,7 @@ std::cerr << "b1: " << bt_buf1[1] << std::endl;
               lightgrep_callback);
 
     // track streaming offset
+    can_read = false;
     start_offset += size;
   }
 
@@ -297,12 +273,14 @@ std::cerr << "b1: " << bt_buf1[1] << std::endl;
   void lw_scanner_t::scan_finalize() {
 
     // finish scan
+    can_read = true;
     lg_closeout_search(searcher,
                        &data_pair,
                        lightgrep_callback);
     lg_reset_context(searcher);
 
     // reset streaming offset
+    can_read = false;
     start_offset = 0;
     bt_clear();
   }
@@ -313,6 +291,7 @@ std::cerr << "b1: " << bt_buf1[1] << std::endl;
 
     // next read
     bt_next(buffer, size);
+    can_read = true;
 
     // finish scan
     lg_search_resolve(searcher,
@@ -327,37 +306,44 @@ std::cerr << "b1: " << bt_buf1[1] << std::endl;
     lg_reset_context(searcher);
 
     // reset streaming offset
+    can_read = false;
     start_offset = 0;
     bt_clear();
   }
 
   // read, potentially across buffer boundary
   std::string lw_scanner_t::read(const size_t match_offset,
-                                 const size_t match_length,
-                                 const size_t match_padding) {
+                                 const size_t match_length) {
 
-    if (start_offset == 0 || match_offset >= start_offset + match_padding) {
+    // make sure read is only called during scan
+    if (!can_read) {
+      std::cout << "Error: read may only be called by callback during scan.\n";
+      return "";
+    }
+
+    // don't let user input crash the read
+    if (match_offset - start_offset + match_length > bt_buf0_size) {
+      std::cerr << "Error in read: invalid read parameter." << std::endl;
+      return "";
+    }
+
+    if (match_offset >= start_offset) {
 
       // good, we don't need to use the backtrack buffer
-      return bt_read(bt_buf0, bt_buf0_size, match_offset - start_offset,
-                     match_length, match_padding);
+
+      return std::string(bt_buf0 + (match_offset - start_offset), match_length);
 
     } else {
 
       // compose the match from prefix buffer bt_buf2 and bt_buf0
-      const size_t prefix_size = (start_offset > match_offset) ?
-                                  start_offset - match_offset : 0;
-      const size_t b2_offset = (prefix_size > bt_buf2_size) ? 0 :
-                            bt_buf2_size - prefix_size;
-std::cout << "read: match_offset: " << match_offset << ", start_offset: " << start_offset << ", prefix_size: " << prefix_size << ", b2_offset: " << b2_offset << "\n";
-std::cout << "read part 1: " << bt_read(bt_buf2, bt_buf2_size, b2_offset,
-                     match_length, match_padding) << "\n";
-std::cout << "read part 2: " << bt_read(bt_buf0, bt_buf0_size, 0,
-                     match_length - prefix_size, match_padding) << "\n";
-      return bt_read(bt_buf2, bt_buf2_size, b2_offset,
-                     match_length, match_padding) +
-             bt_read(bt_buf0, bt_buf0_size, 0,
-                     match_length - prefix_size, match_padding);
+      const size_t b2_size = (start_offset - match_offset <= bt_buf2_size) ?
+                             start_offset - match_offset : bt_buf2_size;
+      const size_t b2_offset = bt_buf2_size - b2_size;
+      const size_t b0_size = match_length - (start_offset - match_offset);
+
+      // return the concatenation
+      return std::string(bt_buf2+b2_offset, b2_size) +
+             std::string(bt_buf0, b0_size);
     }
   }
 }
