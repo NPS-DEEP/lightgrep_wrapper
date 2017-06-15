@@ -146,7 +146,7 @@ namespace lw {
     }
 
     // make sure index is in step with the function_pointers vector
-    if (function_pointers.size() != index) {
+    if (function_pointers.size() != (size_t)index) {
       assert(0);
     }
 
