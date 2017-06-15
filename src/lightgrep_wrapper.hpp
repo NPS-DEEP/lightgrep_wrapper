@@ -44,6 +44,12 @@
 #include <lightgrep/api.h>
 
 /**
+ * Version of lightgrep_wrapper, outside hashdb namespace.
+ */
+extern "C"
+const char* lightgrep_wrapper_version();
+
+/**
  * the typedef for user-provided scan callback functions with user data.
  *
  * The function returns the start and size of the match data and the

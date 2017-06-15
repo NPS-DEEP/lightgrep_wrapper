@@ -40,6 +40,14 @@ The user must not use the read() function after the buffer is destroyed.
 #include <lightgrep/api.h>
 #include "lightgrep_wrapper.hpp"
 
+/**
+ * Version of lightgrep_wrapper, outside namespace.
+ */
+extern "C"
+const char* lightgrep_wrapper_version() {
+  return PACKAGE_VERSION;
+}
+
 namespace lw {
 
   // parse error
