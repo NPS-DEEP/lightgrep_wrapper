@@ -27,6 +27,11 @@
 #include "../src/lightgrep_wrapper.hpp"
 
 class user_data_t {
+  private:
+  // do not allow copy or assignment
+  user_data_t(const user_data_t&) = delete;
+  user_data_t& operator=(const user_data_t&) = delete;
+
   public:
   const std::string text;
   std::vector<std::string> matches;
