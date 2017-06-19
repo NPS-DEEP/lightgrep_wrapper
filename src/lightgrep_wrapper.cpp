@@ -229,6 +229,7 @@ namespace lw {
   }
 
   lw_scanner_t::~lw_scanner_t() {
+    lg_destroy_context(searcher);
     delete[] bt_buf1;
     delete[] bt_buf2;
   }
