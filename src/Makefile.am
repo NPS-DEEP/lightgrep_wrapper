@@ -28,7 +28,7 @@ lib_LTLIBRARIES = liblightgrep_wrapper.la
 AM_CFLAGS = $(LW_CFLAGS)
 AM_CXXFLAGS = $(LW_CXXFLAGS)
 
-liblightgrep_wrapper_la_LDFLAGS = -PIC -avoid-version -shared -no-undefined
+liblightgrep_wrapper_la_LDFLAGS = $(BOOST_LDFLAGS) -pthread
 
 liblightgrep_wrapper_la_SOURCES = $(LW_INCS)
 
