@@ -143,15 +143,11 @@ namespace lw {
      * Parameters:
      *   user_data - User data for your callback function provided in
      *               the add_regex function.
-     *   max_backtrack_size - The maximum number of backtrack bytes to use
-     *               for composing matches that span across buffers, use
-     *               zero if not streaming.
      *
      * Returns:
      *   A lw_scanner instance to scan data with.
      */
-    lw_scanner_t* new_lw_scanner(void* user_data,
-                                 const size_t max_backtrack_size);
+    lw_scanner_t* new_lw_scanner(void* user_data);
   };
 
   /**
@@ -167,31 +163,16 @@ namespace lw {
     data_pair_t data_pair;
     uint64_t start_offset;
 
-    // support for read
-    const size_t max_bt_size;
-    const char* bt_buf0;
-    size_t bt_buf0_size;
-    char* const bt_buf1;
-    size_t bt_buf1_size;
-    char* const bt_buf2;
-    size_t bt_buf2_size;
-    bool can_read;
-
     lw_scanner_t(const LG_HCONTEXT p_searcher,
                  const LG_ContextOptions& p_context_options,
                  function_pointers_t& function_pointers,
-                 void* user_data,
-                 const size_t p_max_backtrack_size);
+                 void* user_data);
 
     ~lw_scanner_t();
 
     // do not allow copy or assignment
     lw_scanner_t(const lw_scanner_t&) = delete;
     lw_scanner_t& operator=(const lw_scanner_t&) = delete;
-
-    // backtrack support for read
-    void bt_clear();
-    void bt_next(const char* const buffer, size_t size);
 
     public:
 
@@ -239,35 +220,45 @@ namespace lw {
      *   match that started before the fence.
      */
     void scan_fence_finalize(const char* const buffer, size_t size);
-
-    /**
-     * This convenience function provides a read service for reading
-     * match data in a streaming context.  If scanning only one buffer
-     * and not streaming, you may prefer to extract your match data
-     * from the buffer directly rather than using this function.
-     *
-     * If a match extends beyond max_backtrack_bytes into the previously
-     * scanned buffer, the beginning of the returned match will be truncated,
-     * so please set max_backtrack_bytes to the size of your largest
-     * expected match.
-     *
-     * This function may only be called by your scan callback function
-     * during scan.
-     *
-     * Parameters:
-     *   match_offset - The offset into the stream where the match starts.
-     *   match_length - The length, in bytes, of the match.
-     *   padding - The number of padding bytes to provide before and after
-     *       the bytes of the actual match, useful for providing context.
-     *
-     * Returns:
-     *   The matched string.  If input parameters are invalid or if this
-     *   function is not called by a callback function during a scan, "" is
-     *   returned and an error is reported to stderr.
-     */
-    std::string read(const size_t match_offset,
-                     const size_t match_length);
   };
+
+  /**
+   * This convenience function provides a read service for reading
+   * match data in a streaming context.  You provide the buffer
+   * and the previous buffer to read from, the offset to the buffer,
+   * the offset and length of where to read, and any requested
+   * additional padding to read.  The returned data may be smaller
+   * than requested if the span requested is outside the bounds
+   * of the two buffers you provide.
+   *
+   * Note that two buffers are provided to support streaming and because
+   * scans started in one buffer may not be identified until scanning
+   * in the next buffer.  It is your responsibility to provide a large
+   * enough previous buffer in order to satisfy your use case.
+   *
+   * Parameters:
+   *   buffer_offset - The offset to your buffer.
+   *   previous_buffer - The buffer adjacent but before your buffer.
+   *   previous_buffer_size - The size, in bytes, of your previous buffer.
+   *   buffer - The buffer that backs your data being scanned.
+   *   buffer_size - The size, in bytes, of your buffer.
+   *   offset - The offset to the data to read.
+   *   length - The length, in bytes, of the data to read.
+   *   padding - Padding, in bytes, before and after the data to read,
+   *             or 0 for no padding.
+   *
+   * Returns:
+   *   The data from the buffers, which may be incomplete if the buffers
+   *   you provide do not sufficiently back the read you request.
+   */
+  std::string read_buffer(const size_t buffer_offset,
+                          const char* const previous_buffer,
+                          const size_t previous_buffer_size,
+                          const char* const buffer,
+                          const size_t buffer_size,
+                          const size_t offset,
+                          const size_t length,
+                          const size_t padding);
 }
 
 #endif

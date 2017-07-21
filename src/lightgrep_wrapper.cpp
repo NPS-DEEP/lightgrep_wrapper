@@ -19,18 +19,6 @@
 
 // adapted from bulk_extractor/src/pattern_scanner.cpp
 
-/*
-Note about the read() function and backtrack support:
-bt_buf0 points to the user's buffer and is set during scan.
-bt_buf1 is a backtrack copy of bt_buf0 and holds the static portion
-of bt_buf0 so that it can be accessed after transitioning to bt_buf2.
-bt_buf2 holds the backtrack copy portion of the previous scan buffer.
-When a match crosses buffer boundaries because of streaming, the
-match is composed of up to max_backtrack_size bytes from backtrack
-buffer bt_buf2 plus the match content in the current buffer at bt_buf0.
-The user must not use the read() function after the buffer is destroyed.
-*/
-
 #include <config.h>
 #include <string>
 #include <sstream>
@@ -183,8 +171,7 @@ namespace lw {
   }
 
   // new scanner
-  lw_scanner_t* lw_t::new_lw_scanner(void* user_data,
-                                     const size_t max_bt_size) {
+  lw_scanner_t* lw_t::new_lw_scanner(void* user_data) {
 
     if (program == nullptr) {
       // lw_t is not ready for this request
@@ -203,8 +190,7 @@ namespace lw {
     // this is the only place the lw_scanner_t constructor is called
     lw_scanner_t* lw_scanner =
                       new lw_scanner_t(searcher, context_options,
-                                       function_pointers, user_data,
-                                       max_bt_size);
+                                       function_pointers, user_data);
     lw_scanners.push_back(lw_scanner);
     return lw_scanner;
   }
@@ -213,57 +199,18 @@ namespace lw {
   lw_scanner_t::lw_scanner_t(LG_HCONTEXT p_searcher,
                              const LG_ContextOptions& p_context_options,
                              function_pointers_t& function_pointers,
-                             void* user_data,
-                             const size_t p_max_backtrack_size):
+                             void* user_data) :
              searcher(p_searcher),
              data_pair(&function_pointers, user_data),
-             start_offset(0),
-             max_bt_size(p_max_backtrack_size),
-             bt_buf0(nullptr),
-             bt_buf0_size(0),
-             bt_buf1(new char[max_bt_size]),
-             bt_buf1_size(0),
-             bt_buf2(new char[max_bt_size]),
-             bt_buf2_size(0),
-             can_read(false) {
+             start_offset(0) {
   }
 
   lw_scanner_t::~lw_scanner_t() {
     lg_destroy_context(searcher);
-    delete[] bt_buf1;
-    delete[] bt_buf2;
-  }
-
-  // private backtrack clear
-  void lw_scanner_t::bt_clear() {
-    bt_buf0 = nullptr;
-    bt_buf0_size = bt_buf1_size = bt_buf2_size = 0;
-  }
-
-  // private backtrack next
-  void lw_scanner_t::bt_next(const char* const buffer, size_t size) {
-
-    // make reference to buffer
-    bt_buf0 = buffer;
-    bt_buf0_size = size;
-
-    // copy b1 to b2
-    std::memcpy(bt_buf2, bt_buf1, bt_buf1_size);
-    bt_buf2_size = bt_buf1_size;
-
-    // copy backtrack part of buffer to b1
-    bt_buf1_size = bt_buf0_size < max_bt_size ? bt_buf0_size : max_bt_size;
-    const size_t offset = bt_buf0_size - bt_buf1_size;
-
-    std::memcpy(bt_buf1, bt_buf0 + offset, bt_buf1_size);
   }
 
   // scan
   void lw_scanner_t::scan(const char* const buffer, size_t size) {
-
-    // next read
-    bt_next(buffer, size);
-    can_read = true;
 
     // scan
     lg_search(searcher,
@@ -274,7 +221,6 @@ namespace lw {
               lightgrep_callback);
 
     // track streaming offset
-    can_read = false;
     start_offset += size;
   }
 
@@ -282,25 +228,18 @@ namespace lw {
   void lw_scanner_t::scan_finalize() {
 
     // finish scan
-    can_read = true;
     lg_closeout_search(searcher,
                        &data_pair,
                        lightgrep_callback);
     lg_reset_context(searcher);
 
     // reset streaming offset
-    can_read = false;
     start_offset = 0;
-    bt_clear();
   }
 
   // scan_fence_finalize
   void lw_scanner_t::scan_fence_finalize(const char* const buffer,
                                          size_t size) {
-
-    // next read
-    bt_next(buffer, size);
-    can_read = true;
 
     // finish scan
     lg_search_resolve(searcher,
@@ -315,45 +254,7 @@ namespace lw {
     lg_reset_context(searcher);
 
     // reset streaming offset
-    can_read = false;
     start_offset = 0;
-    bt_clear();
-  }
-
-  // read, potentially across buffer boundary
-  std::string lw_scanner_t::read(const size_t match_offset,
-                                 const size_t match_length) {
-
-    // make sure read is only called during scan
-    if (!can_read) {
-      std::cout << "Error: read may only be called by callback during scan.\n";
-      return "";
-    }
-
-    // don't let user input crash the read
-    if (match_offset - start_offset + match_length > bt_buf0_size) {
-      std::cerr << "Error in read: invalid read parameter." << std::endl;
-      return "";
-    }
-
-    if (match_offset >= start_offset) {
-
-      // good, we don't need to use the backtrack buffer
-
-      return std::string(bt_buf0 + (match_offset - start_offset), match_length);
-
-    } else {
-
-      // compose the match from prefix buffer bt_buf2 and bt_buf0
-      const size_t b2_size = (start_offset - match_offset <= bt_buf2_size) ?
-                             start_offset - match_offset : bt_buf2_size;
-      const size_t b2_offset = bt_buf2_size - b2_size;
-      const size_t b0_size = match_length - (start_offset - match_offset);
-
-      // return the concatenation
-      return std::string(bt_buf2+b2_offset, b2_size) +
-             std::string(bt_buf0, b0_size);
-    }
   }
 }
 

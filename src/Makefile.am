@@ -21,6 +21,7 @@
 
 LW_INCS = \
 	lightgrep_wrapper.cpp \
+	read_buffer.cpp \
 	lightgrep_wrapper.hpp
 
 lib_LTLIBRARIES = liblightgrep_wrapper.la

@@ -32,19 +32,43 @@ class user_data_t {
   user_data_t(const user_data_t&) = delete;
   user_data_t& operator=(const user_data_t&) = delete;
 
+  // support read
+  size_t buffer_offset;
+  const char* previous_buffer;
+  size_t previous_buffer_size;
+  const char* buffer;
+  size_t buffer_size;
+
+
   public:
   const std::string text;
   std::vector<std::string> matches;
-  lw::lw_scanner_t *lw_scanner;
+  lw::lw_scanner_t* lw_scanner;
   user_data_t(const std::string& p_text) :
+                       buffer_offset(0),
+                       previous_buffer(nullptr), previous_buffer_size(0),
+                       buffer(nullptr), buffer_size(0),
                        text(p_text), matches(), lw_scanner(nullptr) {
   }
+
+  void scan_setup(const size_t p_buffer_offset,
+                  const char* const p_buffer, const size_t p_buffer_size) {
+    buffer_offset = p_buffer_offset;
+    previous_buffer = buffer;
+    previous_buffer_size = buffer_size;
+    buffer = p_buffer;
+    buffer_size = p_buffer_size;
+  }
+
   std::string read(const uint64_t start, const uint64_t size) {
     if (lw_scanner == nullptr) {
       std::cerr << "Error: set up lw_scanner in user_data before calling read in user_data\n";
       assert(0);
     }
-    return lw_scanner->read(start, size);
+    return lw::read_buffer(buffer_offset,
+                           previous_buffer, previous_buffer_size,
+                           buffer, buffer_size,
+                           start, size, 0);
   }
 };
 
@@ -102,7 +126,7 @@ void test1() {
   user_data_t user_data("test1");
 
   // get a lw_scanner
-  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data, 1000);
+  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data);
 
   // set the scanner pointer
   user_data.lw_scanner = lw_scanner;
@@ -112,18 +136,23 @@ void test1() {
 
   // scan first bytes
   std::cout << "test1 start 15\n";
+  user_data.scan_setup(0, c, 15);
   lw_scanner->scan(c, 15);
 
   // scan again
   std::cout << "test1 scan again 5\n";
+  user_data.scan_setup(15, c, 5);
   lw_scanner->scan(c, 5);
 
   // scan across fence
   std::cout << "test1 scan fence\n";
+  user_data.scan_setup(20, c+5, 15-5);
   lw_scanner->scan_fence_finalize(c+5, 15-5);
 
   // scan first bytes again
   std::cout << "test1 scan first again\n";
+  user_data.scan_setup(0, c, 0); // clear previous
+  user_data.scan_setup(0, c, 15);
   lw_scanner->scan(c, 15);
 
   // finalize scan
@@ -140,112 +169,109 @@ void test1() {
   TEST_EQ(user_data.matches.size(), 20);
 }
 
-void callback_stream_read(const uint64_t start,
-                   const uint64_t size,
-                   void* p_user_data) {
-  // typecast void* p_user_data into user_dat_t* user_data
-  user_data_t* d(static_cast<user_data_t*>(p_user_data));
-  std::stringstream ss;
-  ss << "start: " << start << ", size: " << size
-     << ", data: " << d->read(start, size);
-  d->matches.push_back(ss.str());
-}
-
-void test_clipped_stream_read() {
-  // create a lightgrep wrapper instance
-  lw::lw_t lw;
-
-  // add regex definitions
-  lw.add_regex("ef0", "UTF-8", false, false, &callback_stream_read);
-
-  // finalize regex definitions
-  lw.finalize_regex(false);
-
-  // create a user data instance
-  user_data_t user_data("test_clipped_stream_read");
-
-  // get a lw_scanner
-  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data, 1);
-
-  // set the scanner pointer
-  user_data.lw_scanner = lw_scanner;
-
-  // make something to scan
-  const char c[] = "0123456789abcdef";
-
-  // scan stream
-  lw_scanner->scan(c, 16);
-  lw_scanner->scan(c, 16);
-  lw_scanner->scan(c, 16);
-  lw_scanner->scan_finalize();
-
-  // show matches
-  std::cout << "Matches:\n";
-  for (auto it=user_data.matches.begin(); it != user_data.matches.end(); ++it) {
-    std::cout << *it << "\n";
-  }
-
-  // validate size
-  TEST_EQ(user_data.matches.size(), 2);
-  TEST_EQ(user_data.matches[0], "start: 14, size: 3, data: f0");
-  TEST_EQ(user_data.matches[1], "start: 30, size: 3, data: f0");
-}
-
-void callback_read_bounds(const uint64_t start,
-                          const uint64_t size,
-                          void* p_user_data) {
-  // typecast void* p_user_data into user_dat_t* user_data
-  user_data_t* d(static_cast<user_data_t*>(p_user_data));
-  std::string result = "0,1'"+d->read(0,1) +
-                      "' 15,1'"+d->read(15,1) +
-                      "' 15,2'"+d->read(15,2) +
-                      "' 15,17'"+d->read(15,17) +
-                      "' 15,18'"+d->read(15,18) +
-                      "' 16,1'"+d->read(16,1) +
-                      "' 16,16'"+d->read(16,16) +
-                      "'";
-  d->matches.push_back(result);
-}
-
 void test_read_bounds() {
-  // create a lightgrep wrapper instance
-  lw::lw_t lw;
+  const char *pb;
+  size_t pbs;
+  const char *b;
+  size_t bs;
+  // both buffers empty
+  pb = "";
+  pbs = 0;
+  b = "";
+  bs = 0;
+std::string zz = lw::read_buffer(0, pb, pbs, b, bs, 0,0,0);
 
-  // add regex definitions
-  lw.add_regex("0", "UTF-8", false, false, &callback_read_bounds);
+  TEST_EQ(lw::read_buffer(0, pb, pbs, b, bs, 0,0,0), "");
+  TEST_EQ(lw::read_buffer(1, pb, pbs, b, bs, 0,0,0), "");
+  TEST_EQ(lw::read_buffer(0, pb, pbs, b, bs, 0,0,1), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,0,0), "");
 
-  // finalize regex definitions
-  lw.finalize_regex(false);
+  // buffer empty
+  pb = "12345";
+  pbs = 5;
+  b = "";
+  bs = 0;
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 0,0,0), "");
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 0,1,0), "1");
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 1,1,0), "2");
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 0,0,1), "1");
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 0,1,1), "12");
 
-  // create a user data instance
-  user_data_t user_data("test_read_bounds");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 94,0,0), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 94,1,0), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 94,2,0), "1");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 95,0,0), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 95,1,0), "1");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 95,2,0), "12");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 99,1,0), "5");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,0,0), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,1,0), "");
 
-  // get a lw_scanner
-  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data, 16);
+  // previous_buffer empty
+  pb = "";
+  pbs = 0;
+  b = "12345";
+  bs = 5;
+  TEST_EQ(lw::read_buffer(0, pb, pbs, b, bs, 0,0,0), "");
+  TEST_EQ(lw::read_buffer(0, pb, pbs, b, bs, 0,1,0), "1");
+  TEST_EQ(lw::read_buffer(0, pb, pbs, b, bs, 0,1,0), "1");
+  TEST_EQ(lw::read_buffer(0, pb, pbs, b, bs, 1,1,0), "2");
+  TEST_EQ(lw::read_buffer(0, pb, pbs, b, bs, 0,1,1), "12");
 
-  // set the scanner pointer
-  user_data.lw_scanner = lw_scanner;
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,0,0), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,1,0), "1");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 101,1,0), "2");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,0,1), "1");
 
-  // make something to scan
-  const char c[] = "0123456789abcdef";
+  // both buffers used
+  pb = "12345";
+  pbs = 5;
+  b = "6789";
+  bs = 4;
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 0,0,0), "");
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 0,1,0), "1");
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 1,1,0), "2");
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 0,1,1), "12");
+  TEST_EQ(lw::read_buffer(5, pb, pbs, b, bs, 0,0,20), "123456789");
 
-  // scan stream round 1
-  std::cout << "test_read_bounds round 1\n";
-  lw_scanner->scan(c, 16);
-  TEST_EQ(user_data.matches.size(), 1);
-  TEST_EQ(user_data.matches[0], "0,1'0' 15,1'f' 15,2'' 15,17'' 15,18'' 16,1'' 16,16''");
+  // no padding
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 94,1,0), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 95,1,0), "1");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 99,1,0), "5");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,1,0), "6");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 103,1,0), "9");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 104,1,0), "");
 
-  // scan stream round 2
-  std::cout << "test_read_bounds round 2\n";
-  lw_scanner->scan(c, 16);
-  TEST_EQ(user_data.matches.size(), 2);
-  TEST_EQ(user_data.matches[1], "0,1'' 15,1'f' 15,2'f0' 15,17'f0123456789abcdef' 15,18'' 16,1'0' 16,16'0123456789abcdef'");
+  // no padding, 50 byte size
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 99,50,0), "56789");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,50,0), "6789");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 103,50,0), "9");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 104,50,0), "");
 
-  // scan stream round 3
-  std::cout << "test_read_bounds round 3\n";
-  lw_scanner->scan(c, 16);
-  TEST_EQ(user_data.matches.size(), 3);
-  TEST_EQ(user_data.matches[2], "0,1'' 15,1'' 15,2'' 15,17'0123456789abcdef' 15,18'0123456789abcdef0' 16,1'' 16,16'0123456789abcdef'");
+  // 1 byte padding, length 0
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 94,0,1), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 95,0,1), "1");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 96,0,1), "12");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 99,0,1), "45");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,0,1), "56");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 103,0,1), "89");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 104,0,1), "9");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 105,0,1), "");
+
+  // 1 byte padding, length 1
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 94,1,1), "1");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 95,1,1), "12");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 99,1,1), "456");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 100,1,1), "567");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 103,1,1), "89");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 104,1,1), "9");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 105,1,1), "");
+
+  // 50 byte padding
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 44,1,50), "");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 45,1,50), "1");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 153,1,50), "9");
+  TEST_EQ(lw::read_buffer(100, pb, pbs, b, bs, 154,1,50), "");
 }
 
 // ************************************************************
@@ -255,7 +281,6 @@ int main(int argc, char* argv[]) {
 
   // tests
   test1();
-  test_clipped_stream_read();
   test_read_bounds();
 
   // done
