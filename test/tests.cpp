@@ -169,6 +169,32 @@ void test1() {
   TEST_EQ(user_data.matches.size(), 20);
 }
 
+// should not cause null pointer exception
+void test_empty() {
+  // create a lightgrep wrapper instance
+  lw::lw_t lw;
+
+  // add regex definitions
+  lw.add_regex("abc", "UTF-8", false, false, &callback_function1);
+
+  // finalize regex definitions
+  lw.finalize_regex(false);
+
+//  // create a user data instance
+//  user_data_t user_data("");
+
+  // get a lw_scanner
+//  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data);
+  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(nullptr);
+
+//  // set the scanner pointer
+//  user_data.lw_scanner = lw_scanner;
+
+  // scan null
+  lw_scanner->scan(nullptr, 0);
+  lw_scanner->scan_finalize();
+}
+
 void test_read_bounds() {
   const char *pb;
   size_t pbs;
@@ -281,6 +307,7 @@ int main(int argc, char* argv[]) {
 
   // tests
   test1();
+  test_empty();
   test_read_bounds();
 
   // done

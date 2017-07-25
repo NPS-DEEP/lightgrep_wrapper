@@ -212,6 +212,11 @@ namespace lw {
   // scan
   void lw_scanner_t::scan(const char* const buffer, size_t size) {
 
+    // lg doesn't like empty buffer
+    if (size == 0) {
+      return;
+    }
+
     // scan
     lg_search(searcher,
               buffer,
@@ -240,6 +245,18 @@ namespace lw {
   // scan_fence_finalize
   void lw_scanner_t::scan_fence_finalize(const char* const buffer,
                                          size_t size) {
+
+    // lg doesn't like empty buffer
+    if (size == 0) {
+      lg_closeout_search(searcher,
+                         &data_pair,
+                         lightgrep_callback);
+      lg_reset_context(searcher);
+
+      // reset streaming offset
+      start_offset = 0;
+      return;
+    }
 
     // finish scan
     lg_search_resolve(searcher,
