@@ -201,8 +201,7 @@ namespace lw {
                              function_pointers_t& function_pointers,
                              void* user_data) :
              searcher(p_searcher),
-             data_pair(&function_pointers, user_data),
-             start_offset(0) {
+             data_pair(&function_pointers, user_data) {
   }
 
   lw_scanner_t::~lw_scanner_t() {
@@ -210,7 +209,8 @@ namespace lw {
   }
 
   // scan
-  void lw_scanner_t::scan(const char* const buffer, size_t size) {
+  void lw_scanner_t::scan(uint64_t stream_offset,
+                          const char* const buffer, size_t size) {
 
     // lg doesn't like empty buffer
     if (size == 0) {
@@ -221,12 +221,9 @@ namespace lw {
     lg_search(searcher,
               buffer,
               buffer + size,
-              start_offset,
+              stream_offset,
               &data_pair,
               lightgrep_callback);
-
-    // track streaming offset
-    start_offset += size;
   }
 
   // scan_finalize
@@ -237,13 +234,11 @@ namespace lw {
                        &data_pair,
                        lightgrep_callback);
     lg_reset_context(searcher);
-
-    // reset streaming offset
-    start_offset = 0;
   }
 
   // scan_fence_finalize
-  void lw_scanner_t::scan_fence_finalize(const char* const buffer,
+  void lw_scanner_t::scan_fence_finalize(uint64_t stream_offset,
+                                         const char* const buffer,
                                          size_t size) {
 
     // lg doesn't like empty buffer
@@ -252,9 +247,6 @@ namespace lw {
                          &data_pair,
                          lightgrep_callback);
       lg_reset_context(searcher);
-
-      // reset streaming offset
-      start_offset = 0;
       return;
     }
 
@@ -262,16 +254,13 @@ namespace lw {
     lg_search_resolve(searcher,
                       buffer,
                       buffer + size,
-                      start_offset,
+                      stream_offset,
                       &data_pair,
                       lightgrep_callback);
     lg_closeout_search(searcher,
                        &data_pair,
                        lightgrep_callback);
     lg_reset_context(searcher);
-
-    // reset streaming offset
-    start_offset = 0;
   }
 }
 

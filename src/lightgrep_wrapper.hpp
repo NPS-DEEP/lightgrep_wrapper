@@ -161,7 +161,6 @@ namespace lw {
     private:
     const LG_HCONTEXT searcher;
     data_pair_t data_pair;
-    uint64_t start_offset;
 
     lw_scanner_t(const LG_HCONTEXT p_searcher,
                  const LG_ContextOptions& p_context_options,
@@ -181,6 +180,7 @@ namespace lw {
      * to scan a data stream that is larger than your buffer.
      *
      * Parameters:
+     *   stream_offset - The offset into the stream to the start of the buffer.
      *   buffer - The buffer to scan.
      *   size - The size, in bytes, of the buffer to scan.
      *
@@ -188,11 +188,10 @@ namespace lw {
      *   Nothing, but the associated callback function is called for each
      *   match.
      */
-    void scan(const char* const buffer, size_t size);
+    void scan(uint64_t stream_offset, const char* const buffer, size_t size);
 
     /**
-     * End scanning, accepting any active hits that are valid.  The stream
-     * counter is reset so that the scanner may be used again.
+     * End scanning, accepting any active hits that are valid.
      *
      * Parameters:
      *   buffer - The buffer to scan.
@@ -200,18 +199,18 @@ namespace lw {
      *
      * Returns:
      *   Nothing, but the associated callback function is called for each
-     *   active match that is valid.  This can happen when a match could
-     *   have been longer if there were more data.
+     *   active match that is valid.  This can happen when a match being
+     *   tracked could have been longer if there were more data.
      */
     void scan_finalize();
 
     /**
      * Scan into more bytes of data in order to find matches that started
      * before the fence but span across it, then end scanning, accepting
-     * any hits that are valid.  When done, the stream counter is reset
-     * so that the scanner may be used again.
+     * any hits that are valid.
      *
      * Parameters:
+     *   stream_offset - The offset into the stream to the start of the buffer.
      *   buffer - The buffer to scan.
      *   size - The size, in bytes, of the buffer to scan.
      *
@@ -219,7 +218,8 @@ namespace lw {
      *   Nothing, but the associated callback function is called for each
      *   match that started before the fence.
      */
-    void scan_fence_finalize(const char* const buffer, size_t size);
+    void scan_fence_finalize(uint64_t stream_offset,
+                             const char* const buffer, size_t size);
   };
 
   /**
@@ -228,13 +228,13 @@ namespace lw {
    * and the previous buffer to read from, the offset to the buffer,
    * the offset and length of where to read, and any requested
    * additional padding to read.  The returned data may be smaller
-   * than requested if the span requested is outside the bounds
-   * of the two buffers you provide.
+   * than requested if the span requested is outside the bounds of
+   * the two buffers you provide.
    *
-   * Note that two buffers are provided to support streaming and because
-   * scans started in one buffer may not be identified until scanning
+   * Two buffers are provided to support stream scanning, where scans
+   * started in one buffer may not be identified until scanning
    * in the next buffer.  It is your responsibility to provide a large
-   * enough previous buffer in order to satisfy your use case.
+   * enough previous buffer in order to read all requested bytes.
    *
    * Parameters:
    *   buffer_offset - The offset to your buffer.

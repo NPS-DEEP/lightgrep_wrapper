@@ -42,7 +42,7 @@ namespace lw {
 
     // check for invalid input
     if (buffer_offset < previous_buffer_size) {
-      std::cerr << "Error in lightgrep_wrapper read_buffer input: "
+      std::cerr << "Error in lightgrep_wrapper read_buffer usage, "
                 << "buffer_offset: " << buffer_offset
                 << ", previous_buffer_size: " << previous_buffer_size
                 << std::endl;

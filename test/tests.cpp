@@ -33,7 +33,7 @@ class user_data_t {
   user_data_t& operator=(const user_data_t&) = delete;
 
   // support read
-  size_t buffer_offset;
+  size_t stream_offset;
   const char* previous_buffer;
   size_t previous_buffer_size;
   const char* buffer;
@@ -45,15 +45,15 @@ class user_data_t {
   std::vector<std::string> matches;
   lw::lw_scanner_t* lw_scanner;
   user_data_t(const std::string& p_text) :
-                       buffer_offset(0),
+                       stream_offset(0),
                        previous_buffer(nullptr), previous_buffer_size(0),
                        buffer(nullptr), buffer_size(0),
                        text(p_text), matches(), lw_scanner(nullptr) {
   }
 
-  void scan_setup(const size_t p_buffer_offset,
+  void scan_setup(const size_t p_stream_offset,
                   const char* const p_buffer, const size_t p_buffer_size) {
-    buffer_offset = p_buffer_offset;
+    stream_offset = p_stream_offset;
     previous_buffer = buffer;
     previous_buffer_size = buffer_size;
     buffer = p_buffer;
@@ -65,7 +65,7 @@ class user_data_t {
       std::cerr << "Error: set up lw_scanner in user_data before calling read in user_data\n";
       assert(0);
     }
-    return lw::read_buffer(buffer_offset,
+    return lw::read_buffer(stream_offset,
                            previous_buffer, previous_buffer_size,
                            buffer, buffer_size,
                            start, size, 0);
@@ -137,23 +137,23 @@ void test1() {
   // scan first bytes
   std::cout << "test1 start 15\n";
   user_data.scan_setup(0, c, 15);
-  lw_scanner->scan(c, 15);
+  lw_scanner->scan(0, c, 15);
 
   // scan again
   std::cout << "test1 scan again 5\n";
   user_data.scan_setup(15, c, 5);
-  lw_scanner->scan(c, 5);
+  lw_scanner->scan(15, c, 5);
 
   // scan across fence
   std::cout << "test1 scan fence\n";
   user_data.scan_setup(20, c+5, 15-5);
-  lw_scanner->scan_fence_finalize(c+5, 15-5);
+  lw_scanner->scan_fence_finalize(20, c+5, 15-5);
 
   // scan first bytes again
   std::cout << "test1 scan first again\n";
   user_data.scan_setup(0, c, 0); // clear previous
   user_data.scan_setup(0, c, 15);
-  lw_scanner->scan(c, 15);
+  lw_scanner->scan(0, c, 15);
 
   // finalize scan
   std::cout << "test1 finalize\n";
@@ -180,18 +180,11 @@ void test_empty() {
   // finalize regex definitions
   lw.finalize_regex(false);
 
-//  // create a user data instance
-//  user_data_t user_data("");
-
   // get a lw_scanner
-//  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data);
   lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(nullptr);
 
-//  // set the scanner pointer
-//  user_data.lw_scanner = lw_scanner;
-
   // scan null
-  lw_scanner->scan(nullptr, 0);
+  lw_scanner->scan(0, nullptr, 0);
   lw_scanner->scan_finalize();
 }
 
@@ -205,7 +198,6 @@ void test_read_bounds() {
   pbs = 0;
   b = "";
   bs = 0;
-std::string zz = lw::read_buffer(0, pb, pbs, b, bs, 0,0,0);
 
   TEST_EQ(lw::read_buffer(0, pb, pbs, b, bs, 0,0,0), "");
   TEST_EQ(lw::read_buffer(1, pb, pbs, b, bs, 0,0,0), "");
