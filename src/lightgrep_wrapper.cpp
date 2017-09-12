@@ -29,7 +29,7 @@
 #include "lightgrep_wrapper.hpp"
 
 /**
- * Version of lightgrep_wrapper, outside namespace.
+ * The version of lightgrep_wrapper.
  */
 extern "C"
 const char* lightgrep_wrapper_version() {
@@ -45,6 +45,28 @@ namespace lw {
     return ss.str();
   }
 
+  // unclear whether LG_ContextOptions need to be persistent so make them
+  // persistent.
+  LG_ContextOptions create_context_options() {
+    LG_ContextOptions context_options;
+    context_options.TraceBegin = 0xffffffffffffffff;
+    context_options.TraceEnd   = 0;
+    return context_options;
+  }
+
+  LG_HCONTEXT create_searcher(const LG_HPROGRAM program, 
+                              const LG_ContextOptions& context_options) {
+    if (program != nullptr) {
+      return lg_create_context(program, &context_options);
+    } else {
+      // the program is not ready for this request
+      std::cout << "Usage error: At least one regex must be added and "
+                << "lw_scanner_program\nmust be finalized before "
+                << "valid scanners may be generated.";
+      return nullptr;
+    }
+  }
+
   // stage 1 lightgrep callback function
   void lightgrep_callback(void* p_data_pair, const LG_SearchHit* hit) {
 
@@ -52,16 +74,24 @@ namespace lw {
     data_pair_t* data_pair(static_cast<data_pair_t*>(p_data_pair));
 
     // get the stage 2 user-provided scan callback function
-    scan_callback_function_t f = data_pair->first->at(hit->KeywordIndex);
+    scan_callback_function_t f = data_pair->function_pointers->at(
+                                                     hit->KeywordIndex);
 
     // call out to the stage 2 user-provided scan callback function
     (*f)(hit->Start,
          hit->End - hit->Start,
-         data_pair->second);
+         data_pair->user_data);
   }
 
   // constructor
-  lw_t::lw_t() :
+  data_pair_t::data_pair_t(const function_pointers_t* p_function_pointers,
+                           void* p_user_data) :
+            function_pointers(p_function_pointers), user_data(p_user_data) {
+  }
+
+  // constructor
+  lw_scanner_program_t::lw_scanner_program_t() :
+
          // Reuse the parsed pattern data structure for efficiency
          pattern_handle(lg_create_pattern()),
 
@@ -75,30 +105,23 @@ namespace lw {
          program(nullptr),
 
          // the list of scan callback function pointers
-         function_pointers(),
-
-         // the list of user-requested lw_scanners
-         lw_scanners()
+         function_pointers()
   {
   }
 
   // destructor
-  lw_t::~lw_t() {
+  lw_scanner_program_t::~lw_scanner_program_t() {
     if (pattern_handle != nullptr) {
-      // in normal workflow, pattern_handle is destroyed by finalize_regex
+      // in a normal workflow, pattern_handle will be destroyed by
+      // finalize_regex
       lg_destroy_pattern(pattern_handle);
     }
     lg_destroy_pattern_map(pattern_map);
     lg_destroy_program(program);
-
-    // destroy all allocated scanners
-    for (auto it = lw_scanners.begin(); it != lw_scanners.end(); ++it) {
-      delete *it;
-    }
   }
 
   // add_regex
-  std::string lw_t::add_regex(const std::string& regex,
+  std::string lw_scanner_program_t::add_regex(const std::string& regex,
                               const std::string& character_encoding,
                               const bool is_case_insensitive,
                               const bool is_fixed_string,
@@ -154,7 +177,7 @@ namespace lw {
   }
 
   // finalize_regex
-  void lw_t::finalize_regex(const bool is_determinized) {
+  void lw_scanner_program_t::finalize_program(bool is_determinized) {
 
     // discard the pattern handle now that we've parsed all patterns
     lg_destroy_pattern(pattern_handle);
@@ -170,38 +193,14 @@ namespace lw {
     fsm = nullptr;
   }
 
-  // new scanner
-  lw_scanner_t* lw_t::new_lw_scanner(void* user_data) {
-
-    if (program == nullptr) {
-      // lw_t is not ready for this request
-      std::cout << "Usage error: At least one regex must be added and "
-                << "finalize_regex\nmust be called before new_lw_scanner "
-                << "may be called.  nullptr returned.\n";
-      return nullptr;
-    }
-
-    // create a search context
-    LG_ContextOptions context_options;
-    context_options.TraceBegin = 0xffffffffffffffff;
-    context_options.TraceEnd   = 0;
-    LG_HCONTEXT searcher = lg_create_context(program, &context_options);
-
-    // this is the only place the lw_scanner_t constructor is called
-    lw_scanner_t* lw_scanner =
-                      new lw_scanner_t(searcher, context_options,
-                                       function_pointers, user_data);
-    lw_scanners.push_back(lw_scanner);
-    return lw_scanner;
-  }
-
-  // private lw_scanner_t constructor
-  lw_scanner_t::lw_scanner_t(LG_HCONTEXT p_searcher,
-                             const LG_ContextOptions& p_context_options,
-                             function_pointers_t& function_pointers,
+  // lw_scanner_t constructor
+  lw_scanner_t::lw_scanner_t(const lw_scanner_program_t& scanner_program,
                              void* user_data) :
-             searcher(p_searcher),
-             data_pair(&function_pointers, user_data) {
+             context_options(create_context_options()),
+             searcher(create_searcher(scanner_program.program,
+                                      context_options)),
+             data_pair(&(scanner_program.function_pointers), user_data),
+             program_is_finalized(searcher != nullptr) {
   }
 
   lw_scanner_t::~lw_scanner_t() {
@@ -212,7 +211,7 @@ namespace lw {
   void lw_scanner_t::scan(uint64_t stream_offset,
                           const char* const buffer, size_t size) {
 
-    // lg doesn't like empty buffer
+    // lg doesn't like an empty buffer
     if (size == 0) {
       return;
     }

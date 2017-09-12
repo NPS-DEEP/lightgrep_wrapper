@@ -22,16 +22,17 @@
  * Header file for the lightgrep_wrapper library.
  *
  * Usage:
- *     1 - Obtain a lw_t instance.
+ *     1 - Obtain a scanner_program_t instance.
  *     2 - Add regular expression definitions.
- *     3 - When done adding definitions, finalize them before scanning.
- *     4 - Once finalized, get lw_scanner_t instances to use to scan data.
+ *     3 - When done adding definitions, finalize your scanner program.
+ *     4 - Once finalized, create lw_scanner_t instances to scan data for
+           the regular expressions you compiled in your scanner program.
  *         Scanners are threadsafe, so get one per CPU for parallelization.
- *     5 - Use scanner instances to scan data using scan, scan_fence, and
- *         scan_finalize interfaces.  scan_finalize scans for final
- *         matches and then resets the scanner by resetting the stream
- *         offset count back to 0.  Use scan_fence if you need to capture
- *         matches that start before the fence but span across it.
+ *     5 - Use lw_scanner_t interfaces to scan data for matches to regular
+ *         expressions.  Use scan to scan a stream of data in buffer
+ *         intervals.  Use scan_finalize scans for final matches.  Use
+ *         scan_fence if you need to capture matches that start before
+ *         the fence but span across it.
  */
 
 #ifndef LIGHTGREP_WRAPPER_HPP
@@ -44,22 +45,25 @@
 #include <lightgrep/api.h>
 
 /**
- * Version of lightgrep_wrapper, outside hashdb namespace.
+ * The version of lightgrep_wrapper.
  */
 extern "C"
 const char* lightgrep_wrapper_version();
 
 /**
- * the typedef for user-provided scan callback functions with user data.
+ * This is the typedef for user-provided scan callback functions with
+ * user data.
  *
- * The function returns the start and size of the match data and the
- * user data you provided when you created your scanner instance.
+ * The function returns the start and size of the match data and a pointer
+ * to your user data which you provided when you created your scanner
+ * instance.
  *
  * Parameters:
  *   start - Start offset of the scan hit with respect to the beginning
  *           of the scan stream.
  *   size - The size of the scan hit data.
- *   user_data - The user data provided to lw_t::new_lw_scanner
+ *   user_data - The user data provided to lw_scanner_t.  Use this to
+ *           save information about matches.
  */
 typedef void (*scan_callback_function_t)(const uint64_t start,
                                          const uint64_t size,
@@ -67,14 +71,24 @@ typedef void (*scan_callback_function_t)(const uint64_t start,
 
 namespace lw {
 
-  class lw_scanner_t;
+  // internal support structure
   typedef std::vector<scan_callback_function_t> function_pointers_t;
-  typedef std::pair<function_pointers_t*, void*> data_pair_t;
+//  typedef std::pair<function_pointers_t*, void*> data_pair_t;
+  class data_pair_t {
+    public:
+    const function_pointers_t* function_pointers;
+    void* user_data;
+    data_pair_t(const function_pointers_t* p_function_pointers,
+                void* p_user_data);
+  };
 
   /**
-   * The lightgrep wrapper.
+   * Build a scanner program instance to provide to your scanner.
    */
-  class lw_t {
+  class lw_scanner_program_t {
+
+    // the scanner accesses the program handle and function pointers
+    friend class lw_scanner_t;
 
     private:
     LG_HPATTERN     pattern_handle;
@@ -85,27 +99,23 @@ namespace lw {
     // the scan callback function pointers
     std::vector<scan_callback_function_t> function_pointers;
 
-    // lw_scanners
-    std::vector<lw_scanner_t*> lw_scanners;
-
     // do not allow copy or assignment
-    lw_t(const lw_t&) = delete;
-    lw_t& operator=(const lw_t&) = delete;
+    lw_scanner_program_t(const lw_scanner_program_t&) = delete;
+    lw_scanner_program_t& operator=(const lw_scanner_program_t&) = delete;
 
     public:
     /**
-     * Create a lightgrep wrapper object to use for building a scan program
-     * and obtaining scanners.
+     * Begin a scanner program instance.
      */
-    lw_t();
+    lw_scanner_program_t();
 
     /**
      * Release resources.
      */
-    ~lw_t();
+    ~lw_scanner_program_t();
 
     /**
-     * Add a regular expression definition to scan for.
+     * Add a regular expression to scan for.
      *
      * Parameters:
      *   regex - The regular expression text.
@@ -125,55 +135,53 @@ namespace lw {
                           scan_callback_function_t f);
 
     /**
-     * Finalize the regular expression engine so it can be used for scanning.
+     * Finalize the regular expression scanner program used for scanning.
+     * Once finalized, the program becomes valid, cannot be changed, and
+     * may be provided to scanners,
      *
      * Parameters:
-     *   is_determinized - false=NFA, true=DFA(pseudo).  Use false.
+     *   is_determinized - false=NFA, true=DFA(pseudo).  Use false.  See
+     *                     liblightgrep.
      */
-    void finalize_regex(const bool is_determinized);
-
-    /**
-     * Get a scanner to scan data with.  Get one for each CPU, they are
-     * threadsafe.  Be sure to use your user_data in a threadsafe way.
-     * Returns nullprt if called before calling finalize_regex().
-     *
-     * Do not delete these.  Let lw_t do this.  Re-use these instead of
-     * creating more than you need.
-     *
-     * Parameters:
-     *   user_data - User data for your callback function provided in
-     *               the add_regex function.
-     *
-     * Returns:
-     *   A lw_scanner instance to scan data with.
-     */
-    lw_scanner_t* new_lw_scanner(void* user_data);
+    void finalize_program(bool is_determinized);
   };
 
   /**
-   * A lw_scanner instance.
+   * A scanner instance that you can use for scanning.
    */
   class lw_scanner_t {
 
-    // lw_t uses the lw_scanner_t constructor
-    friend class lw_t;
-
     private:
+    const LG_ContextOptions context_options;
     const LG_HCONTEXT searcher;
     data_pair_t data_pair;
-
-    lw_scanner_t(const LG_HCONTEXT p_searcher,
-                 const LG_ContextOptions& p_context_options,
-                 function_pointers_t& function_pointers,
-                 void* user_data);
-
-    ~lw_scanner_t();
 
     // do not allow copy or assignment
     lw_scanner_t(const lw_scanner_t&) = delete;
     lw_scanner_t& operator=(const lw_scanner_t&) = delete;
 
     public:
+
+    /**
+     * True when the scanner program has been finalized.  The scanner will
+     * fail if the scanner program has not been finalized.
+     */
+    const bool program_is_finalized;
+
+    /**
+     * Instantiate a scanner instance that you can use for scanning.
+     * Fails with assert if scanner_program has not been finalized.
+     *
+     * Parameters:
+     *   scanner_program - The scanner prrogram containing the regex program
+     *           and the function callbacks that the scanner will use.
+     *   user_data - The user data that this scanner will use.  Use it to
+     *           save information about matches.
+     */
+    lw_scanner_t(const lw_scanner_program_t& scanner_program,
+                 void* user_data);
+
+    ~lw_scanner_t();
 
     /**
      * Scan bytes of data from a buffer.  Call repeatedly, as needed,

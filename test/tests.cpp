@@ -112,7 +112,7 @@ void callback_function3(const uint64_t start,
 
 void test1() {
   // create a lightgrep wrapper instance
-  lw::lw_t lw;
+  lw::lw_scanner_program_t lw;
 
   // add regex definitions
   lw.add_regex("abc", "UTF-8", false, false, &callback_function1);
@@ -120,16 +120,19 @@ void test1() {
   lw.add_regex("cab", "UTF-8", false, false, &callback_function3);
 
   // finalize regex definitions
-  lw.finalize_regex(false);
+  lw.finalize_program(false);
 
   // create a user data instance
   user_data_t user_data("test1");
 
   // get a lw_scanner
-  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(&user_data);
+  lw::lw_scanner_t lw_scanner(lw, &user_data);
 
-  // set the scanner pointer
-  user_data.lw_scanner = lw_scanner;
+  // check finalization
+  TEST_EQ(lw_scanner.program_is_finalized, true);
+
+  // set the scanner pointer into user_data
+  user_data.lw_scanner = &lw_scanner;
 
   // make something to scan
   const char c[] = "abcbabcbabcbabc";
@@ -137,27 +140,27 @@ void test1() {
   // scan first bytes
   std::cout << "test1 start 15\n";
   user_data.scan_setup(0, c, 15);
-  lw_scanner->scan(0, c, 15);
+  lw_scanner.scan(0, c, 15);
 
   // scan again
   std::cout << "test1 scan again 5\n";
   user_data.scan_setup(15, c, 5);
-  lw_scanner->scan(15, c, 5);
+  lw_scanner.scan(15, c, 5);
 
   // scan across fence
   std::cout << "test1 scan fence\n";
   user_data.scan_setup(20, c+5, 15-5);
-  lw_scanner->scan_fence_finalize(20, c+5, 15-5);
+  lw_scanner.scan_fence_finalize(20, c+5, 15-5);
 
   // scan first bytes again
   std::cout << "test1 scan first again\n";
   user_data.scan_setup(0, c, 0); // clear previous
   user_data.scan_setup(0, c, 15);
-  lw_scanner->scan(0, c, 15);
+  lw_scanner.scan(0, c, 15);
 
   // finalize scan
   std::cout << "test1 finalize\n";
-  lw_scanner->scan_finalize();
+  lw_scanner.scan_finalize();
 
   // show matches
   std::cout << "Matches:\n";
@@ -170,22 +173,12 @@ void test1() {
 }
 
 // should not cause null pointer exception
-void test_empty() {
-  // create a lightgrep wrapper instance
-  lw::lw_t lw;
+void test_is_finalized() {
 
-  // add regex definitions
-  lw.add_regex("abc", "UTF-8", false, false, &callback_function1);
-
-  // finalize regex definitions
-  lw.finalize_regex(false);
-
-  // get a lw_scanner
-  lw::lw_scanner_t* lw_scanner = lw.new_lw_scanner(nullptr);
-
-  // scan null
-  lw_scanner->scan(0, nullptr, 0);
-  lw_scanner->scan_finalize();
+  // get an incorrectly initialized lw_scanner
+  lw::lw_scanner_program_t lw;
+  lw::lw_scanner_t lw_scanner(lw, nullptr);
+  TEST_EQ(lw_scanner.program_is_finalized, false);
 }
 
 void test_read_bounds() {
@@ -299,7 +292,7 @@ int main(int argc, char* argv[]) {
 
   // tests
   test1();
-  test_empty();
+  test_is_finalized();
   test_read_bounds();
 
   // done
